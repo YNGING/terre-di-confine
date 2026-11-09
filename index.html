@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111e1a">
+  <meta name="description" content="Terre di Confine: un piccolo RTS medievale gratuito, giocabile direttamente nel browser.">
+  <title>Terre di Confine — Mini RTS medievale</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="./game.js" defer></script>
+</head>
+<body>
+  <main class="game-shell" aria-label="Terre di Confine, gioco di strategia in tempo reale">
+    <canvas id="game" aria-label="Mappa di gioco" tabindex="0"></canvas>
+
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-emblem" aria-hidden="true">✦</span>
+        <div><strong>TERRE DI CONFINE</strong><small>UN MINI RTS MEDIEVALE</small></div>
+      </div>
+      <div class="resource-bar" aria-live="off">
+        <div class="resource"><span class="resource-icon wood">♣</span><span><small>LEGNO</small><b id="wood">180</b></span></div>
+        <div class="resource"><span class="resource-icon gold">◆</span><span><small>ORO</small><b id="gold">120</b></span></div>
+        <div class="resource"><span class="resource-icon troops">⚔</span><span><small>POPOLAZIONE</small><b id="population">5 / 18</b></span></div>
+      </div>
+      <div class="top-actions"><span id="timer" class="timer">00:00</span><button id="helpBtn" class="circle-button" title="Come si gioca (H)" aria-label="Come si gioca">?</button><button id="restartBtn" class="circle-button" title="Ricomincia" aria-label="Ricomincia">↻</button></div>
+    </header>
+
+    <div class="objective" aria-label="Obiettivo"><span class="objective-sigil">⚑</span><span><small>OBIETTIVO</small><strong>Distruggi la fortezza nemica</strong></span></div>
+    <aside class="command-panel" aria-label="Selezione e comandi">
+      <div class="panel-eyebrow"><span class="eyebrow-dot"></span> UNITÀ & COMANDI</div>
+      <h2 id="selectionTitle">Nessuna selezione</h2>
+      <p id="selectionDescription" class="selection-description">Seleziona un'unità o un edificio per impartire ordini.</p>
+      <div id="selectionStats" class="selection-stats"></div>
+      <div id="commandButtons" class="command-buttons"></div>
+      <p id="selectionHint" class="selection-hint">Clic sinistro per selezionare · clic destro per dare ordini</p>
+    </aside>
+
+    <div class="bottom-left"><div id="toast" class="toast" role="status" aria-live="polite"></div><div class="controls-hint"><span class="key">W A S D</span> Sposta mappa <span class="hint-sep">·</span> <span class="key">SPAZIO</span> Torna alla base</div></div>
+    <aside class="minimap-container" aria-label="Minimappa"><div class="minimap-header"><span>✧ &nbsp; IL REGNO</span><span id="waveText">ONDATA 01</span></div><canvas id="minimap" width="240" height="156" aria-label="Tocca per spostare la visuale"></canvas></aside>
+    <div id="placementNotice" class="placement-notice hidden">⌂ &nbsp; Scegli dove costruire la caserma <span>ESC per annullare</span></div>
+    <div id="dragBox" class="drag-box hidden"></div>
+
+    <div id="modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-card">
+        <span class="modal-kicker">✦ &nbsp; UNA PICCOLA AVVENTURA STRATEGICA &nbsp; ✦</span>
+        <div class="modal-crest" aria-hidden="true">⚔</div>
+        <h1 id="modalTitle">Terre di Confine</h1>
+        <p id="modalSubtitle" class="modal-subtitle">Le tue terre sono minacciate. Raccogli risorse, costruisci una caserma, addestra soldati e conquista la fortezza rivale.</p>
+        <div id="modalGuide" class="modal-guide">
+          <div><span>01</span><strong>Seleziona</strong><small>Clicca sulle unità o trascina per selezionare un gruppo.</small></div>
+          <div><span>02</span><strong>Comanda</strong><small>Clic destro per muoverti, raccogliere o attaccare. Su touch: seleziona e poi tocca la meta.</small></div>
+          <div><span>03</span><strong>Conquista</strong><small>Costruisci una caserma con un contadino e addestra soldati.</small></div>
+        </div>
+        <button id="modalButton" class="primary-button">Inizia la partita <span aria-hidden="true">→</span></button>
+        <p class="modal-footnote">Nessun download · Nessun account · Salvataggio non previsto</p>
+      </div>
+    </div>
+  </main>
+</body>
+</html>
