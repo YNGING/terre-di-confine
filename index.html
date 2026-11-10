@@ -7,6 +7,7 @@
   <meta name="description" content="Terre di Confine: un piccolo RTS medievale gratuito, giocabile direttamente nel browser.">
   <title>Terre di Confine — Mini RTS medievale</title>
   <link rel="stylesheet" href="./style.css">
+  <script src="./rules.js" defer></script>
   <script src="./game.js" defer></script>
 </head>
 <body>
@@ -19,14 +20,15 @@
         <div><strong>TERRE DI CONFINE</strong><small>UN MINI RTS MEDIEVALE</small></div>
       </div>
       <div class="resource-bar" aria-live="off">
-        <div class="resource"><span class="resource-icon wood">♣</span><span><small>LEGNO</small><b id="wood">180</b></span></div>
-        <div class="resource"><span class="resource-icon gold">◆</span><span><small>ORO</small><b id="gold">120</b></span></div>
+        <div class="resource"><span class="resource-icon wood">♣</span><span><small>LEGNO</small><b id="wood">200</b></span></div>
+        <div class="resource"><span class="resource-icon gold">◆</span><span><small>ORO</small><b id="gold">110</b></span></div>
         <div class="resource"><span class="resource-icon troops">⚔</span><span><small>POPOLAZIONE</small><b id="population">5 / 18</b></span></div>
       </div>
-      <div class="top-actions"><span id="timer" class="timer">00:00</span><button id="helpBtn" class="circle-button" title="Come si gioca (H)" aria-label="Come si gioca">?</button><button id="restartBtn" class="circle-button" title="Ricomincia" aria-label="Ricomincia">↻</button></div>
+      <div class="top-actions"><span id="timer" class="timer">00:00</span><button id="pauseBtn" class="circle-button" title="Pausa (P)" aria-label="Pausa"><span class="pause-symbol" aria-hidden="true"></span></button><button id="helpBtn" class="circle-button" title="Come si gioca (H)" aria-label="Come si gioca">?</button><button id="restartBtn" class="circle-button" title="Ricomincia" aria-label="Ricomincia">↻</button></div>
     </header>
 
     <div class="objective" aria-label="Obiettivo"><span class="objective-sigil">⚑</span><span><small>OBIETTIVO</small><strong>Distruggi la fortezza nemica</strong></span></div>
+    <button id="outpostStatus" class="frontier-status" title="Centra e seleziona l’avamposto">Avamposto: neutrale · 0%</button>
     <aside class="command-panel" aria-label="Selezione e comandi">
       <div class="panel-eyebrow"><span class="eyebrow-dot"></span> UNITÀ & COMANDI</div>
       <h2 id="selectionTitle">Nessuna selezione</h2>
@@ -35,6 +37,7 @@
       <div id="commandButtons" class="command-buttons"></div>
       <p id="selectionHint" class="selection-hint">Clic sinistro per selezionare · clic destro per dare ordini</p>
     </aside>
+    <div class="quick-actions" aria-label="Selezione rapida"><button id="cancelOrderBtn" class="hidden">Annulla ordine</button><button id="idleBtn" title="Contadino inattivo (I)">⚒ Inattivi: 3</button><button id="armyBtn" title="Seleziona l’esercito (G)">⚔ Esercito</button></div>
 
     <div class="bottom-left"><div id="toast" class="toast" role="status" aria-live="polite"></div><div class="controls-hint"><span class="key">W A S D</span> Sposta mappa <span class="hint-sep">·</span> <span class="key">SPAZIO</span> Torna alla base</div></div>
     <aside class="minimap-container" aria-label="Minimappa"><div class="minimap-header"><span>✧ &nbsp; IL REGNO</span><span id="waveText">ONDATA 01</span></div><canvas id="minimap" width="240" height="156" aria-label="Tocca per spostare la visuale"></canvas></aside>
@@ -46,11 +49,11 @@
         <span class="modal-kicker">✦ &nbsp; UNA PICCOLA AVVENTURA STRATEGICA &nbsp; ✦</span>
         <div class="modal-crest" aria-hidden="true">⚔</div>
         <h1 id="modalTitle">Terre di Confine</h1>
-        <p id="modalSubtitle" class="modal-subtitle">Le tue terre sono minacciate. Raccogli risorse, costruisci una caserma, addestra soldati e conquista la fortezza rivale.</p>
+        <p id="modalSubtitle" class="modal-subtitle">Raccogli risorse, guida armigeri e arcieri, conquista l’avamposto per reclutare maghi e assalta la fortezza rivale.</p>
         <div id="modalGuide" class="modal-guide">
           <div><span>01</span><strong>Seleziona</strong><small>Clicca sulle unità o trascina per selezionare un gruppo.</small></div>
-          <div><span>02</span><strong>Comanda</strong><small>Clic destro per muoverti, raccogliere o attaccare. Su touch: seleziona e poi tocca la meta.</small></div>
-          <div><span>03</span><strong>Conquista</strong><small>Costruisci una caserma con un contadino e addestra soldati.</small></div>
+          <div><span>02</span><strong>Comanda</strong><small>Clic destro o tocco sulla meta. Muovi per ritirarti; Avanza (F) per combattere; Mantieni (X) per difendere.</small></div>
+          <div><span>03</span><strong>Conquista</strong><small>Costruisci la caserma (B). Armigero: R, arciere: Q, mago: E. Tieni truppe nell’avamposto per sbloccare i maghi.</small></div>
         </div>
         <button id="modalButton" class="primary-button">Inizia la partita <span aria-hidden="true">→</span></button>
         <p class="modal-footnote">Nessun download · Nessun account · Salvataggio non previsto</p>
@@ -59,3 +62,4 @@
   </main>
 </body>
 </html>
+

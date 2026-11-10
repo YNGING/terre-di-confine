@@ -11,3 +11,47 @@
 @media(max-width:1000px){.topbar{gap:10px;inset:9px 10px auto;padding:9px}.brand{min-width:168px;gap:7px}.brand-emblem{width:38px;height:38px}.brand strong{font-size:11px}.brand small{font-size:8px}.resource{min-width:95px;padding:5px 7px;gap:5px}.resource-icon{width:26px;height:26px}.resource b{font-size:14px}.resource small{font-size:8px}.objective{left:11px;top:90px}.command-panel{left:11px;top:155px;width:235px;padding:13px}.minimap-container{right:10px;bottom:11px;width:202px}.bottom-left{left:11px;bottom:15px;max-width:calc(100% - 230px)}}
 @media(max-width:680px){.topbar{flex-wrap:wrap;gap:7px;min-height:0}.brand{flex:1;min-width:170px}.top-actions{order:2}.resource-bar{order:3;width:100%;flex-basis:100%}.resource{flex:1;justify-content:center}.objective{top:131px;right:11px;width:max-content;max-width:calc(100% - 22px)}.objective strong{font-size:11px}.command-panel{top:auto;bottom:12px;left:10px;width:min(228px,calc(100% - 165px));min-height:0;max-height:49vh;overflow:auto;padding:12px}.command-panel h2{font-size:19px}.selection-description{font-size:11px}.selection-hint{display:none}.command-button{padding:8px}.command-button b{font-size:11px}.minimap-container{right:10px;bottom:11px;width:146px;padding:5px}.minimap-header{font-size:8px}.controls-hint{display:none}.bottom-left{left:10px;bottom:auto;top:186px;max-width:230px}.placement-notice{left:50%;bottom:50%;transform:translate(-50%,50%);white-space:normal;width:85%;text-align:center}.modal-card{padding:25px 18px}.modal-crest{margin:19px auto 7px;width:57px;height:57px;font-size:29px}.modal-guide{gap:6px;margin:20px 0}.modal-guide>div{padding:9px}.modal-guide small{font-size:10px}.modal-guide strong{font-size:11px}.modal-kicker{font-size:8px}.modal-subtitle{font-size:12px}}
 @media(max-width:390px){.modal-guide{grid-template-columns:1fr}.modal-guide>div{display:grid;grid-template-columns:25px 1fr;gap:0 6px}.modal-guide span{grid-row:span 2}.modal-guide strong{margin:0}.resource-icon{display:none}.topbar{padding:7px}.resource{min-width:0}.command-panel{width:calc(100% - 175px)}}
+
+/* Frontier expansion: keep commands reachable on small screens. */
+.command-panel{min-height:0;max-height:calc(100dvh - 280px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:#657b62 #1b3026}
+.frontier-status{position:absolute;z-index:4;right:20px;top:110px;padding:12px 15px;border:1px solid #bda66d;border-radius:9px;background:#1b3026ed;color:#ebd8a7;font-size:12px}
+.frontier-status[data-owner="player"]{color:#a4e1c5;border-color:#7cbaa1}
+.frontier-status[data-owner="enemy"]{color:#f3ad9c;border-color:#cb7d6c}
+.frontier-status[data-owner="contested"]{color:#ffcd7e;border-color:#e5a853}
+.quick-actions{position:absolute;z-index:4;bottom:55px;left:20px;display:flex;gap:8px}
+.quick-actions button{padding:10px 12px;border-radius:8px;border:1px solid #66806a;background:#1b3026ed;color:#e9e4ca;font-size:12px;min-height:40px}
+.quick-actions button:hover,.frontier-status:hover{background:#365448}
+.tactics{display:grid;grid-template-columns:1fr;gap:6px;border-top:1px solid var(--stroke);padding-top:10px;margin-top:4px}
+.tactics .command-button{padding:8px 10px}
+.queue-list{font-size:10px;color:#d9c798;line-height:1.6;flex-basis:100%}
+.pause-symbol{display:inline-block;width:9px;height:12px;border-left:3px solid currentColor;border-right:3px solid currentColor;vertical-align:middle}
+.placement-notice,.toast{pointer-events:none}
+.toast{position:fixed;left:50%;top:110px;transform:translateX(-50%);max-width:min(360px,calc(100% - 32px));margin:0}
+.minimap-header{letter-spacing:.04em;gap:4px}
+.modal-backdrop{overflow-y:auto}
+.modal-card{max-height:calc(100dvh - 40px);overflow-y:auto}
+@media(max-width:1000px){
+  .frontier-status{top:100px;right:11px;font-size:11px}
+  .command-panel{max-height:calc(100dvh - 260px)}
+  .quick-actions{left:11px}
+  .toast{top:160px;left:auto;right:12px;transform:none;max-width:270px}
+}
+@media(max-width:680px){
+  .brand{min-width:140px}.brand strong{font-size:10px}.brand small{font-size:7px}
+  .top-actions{gap:5px}.timer{margin-right:0;font-size:11px}.circle-button{width:30px;height:32px}
+  .frontier-status{top:183px;left:11px;right:auto;font-size:10px;padding:9px 11px}
+  .command-panel{max-height:42dvh;width:calc(100% - 175px)}
+  .quick-actions{left:auto;right:10px;bottom:155px;width:146px;flex-direction:column;gap:6px}
+  .quick-actions button{font-size:11px;padding:8px;min-height:36px}
+  .toast{top:227px;left:11px;right:auto;max-width:230px;font-size:11px}
+  .minimap-header{flex-direction:column;gap:3px;font-size:8px}
+  .command-button small{font-size:10px}.command-button{min-height:44px}
+  .resource b{font-size:13px}
+}
+@media(max-width:360px){.brand-emblem{display:none}.brand{min-width:126px}.command-panel{width:calc(100% - 165px);padding:9px}.quick-actions{width:136px}.minimap-container{width:136px}}
+@media(max-height:520px) and (min-width:681px){
+  .topbar{min-height:60px}.objective{top:80px}.frontier-status{top:80px}
+  .command-panel{top:140px;max-height:calc(100dvh - 245px)}
+  .modal-card{padding:15px 25px}.modal-crest{display:none}
+}
+
