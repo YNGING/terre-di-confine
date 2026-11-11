@@ -2,7 +2,31 @@
 
 Un RTS in italiano, **senza librerie esterne e senza backend**. HTML5, CSS e JavaScript con Canvas 2D: apri `index.html` oppure pubblica i file su GitHub Pages.
 
-## Come si gioca
+## Due livelli
+
+Il selettore iniziale permette di giocare entrambi i livelli. Vincendo il primo appare **Livello successivo**; dopo una sconfitta si riprova il livello corrente. **Ricomincia** azzera il livello corrente e riapre il selettore. Da pausa o fine partita, **Scegli livello · abbandona la partita** torna al selettore azzerando la partita in corso. Non sono richiesti sblocco o salvataggi.
+
+| | Livello 1 · Terre di Confine | Livello 2 · La frontiera contesa |
+| --- | --- | --- |
+| Mappa | 2400 × 1600 | 3000 × 2000 |
+| Popolazione massima, incluse le code | 18 | 24 |
+| Boschi / miniere | 9 / 5 | 15 / 8 |
+| Avamposti | 1, con 8 oro ogni 8s | 3, con 6 oro ogni 8s ciascuno |
+| Fortezze rivali | Rossi, 1400 PV | Rossi e Viola, 1200 PV ciascuna |
+| Vittoria | Distruggi la fortezza rossa | Distruggi entrambe le fortezze |
+
+Costi, statistiche delle unità e dotazione iniziale sono condivisi: 200 legno, 110 oro, tre contadini e due armigeri. Il primo livello conserva mappa e bilanciamento originali.
+
+### La frontiera contesa
+
+- L’avamposto di ponente è vicino alla base; quelli del nord e del sud sono più esposti, vicini a risorse e fortezze rivali. Le strade indicano i due fronti e non bloccano il movimento.
+- Basta controllare **almeno un avamposto** per reclutare maghi. Ogni avamposto gestisce conquista, rendita e deposito in modo indipendente. I contadini scelgono il deposito disponibile più vicino e cambiano destinazione se diventa conteso o viene perso.
+- Rossi e Viola sono due fazioni distinte, ostili al giocatore e fra loro. La presenza di combattenti di più fazioni ferma conquista, rendita e deposito. Anche il passaggio da Rossi a Viola richiede prima la neutralizzazione, poi la conquista: circa 24 secondi complessivi.
+- Un solo calendario regola le ondate: prima partenza a 75 secondi, prime due ondate rosse, Viola dalla terza (circa 195 secondi). Poi i fronti si alternano. Le ondate crescono fino a 10 unità, con arcieri dalla terza e maghi dalla sesta, e alternano castello e avamposti come obiettivi.
+- Distruggere una fortezza lascia vuoti i suoi successivi turni di attacco: il fronte superstite non riceve ondate aggiuntive. Le truppe già presenti restano in campo. La partita termina quando entrambe le fortezze sono distrutte, oppure quando cade il castello del giocatore.
+- La minimappa distingue i colori delle fazioni ed evidenzia la fortezza da cui partirà la prossima ondata. La scritta **TREGUA** indica il turno di un fronte già sconfitto. Clic ripetuti sul pulsante degli avamposti centrano e selezionano ponente, nord e sud.
+
+## Come si gioca (livello 1)
 
 1. Premi **Inizia la partita**. Hai tre contadini e due armigeri.
 2. Seleziona i contadini e ordina la raccolta con clic destro su boschi e miniere. Trasportano fino a 18 risorse, le depositano e ripartono. A giacimento esaurito consegnano l’ultimo carico e cercano un’altra fonte dello stesso tipo.
@@ -81,11 +105,11 @@ Per eseguire i test di regressione, con Node.js 22 o superiore e senza installar
 node --test tests/game.test.cjs
 ```
 
-I test verificano raccolta ed esaurimento, arrivi diagonali e raccolta prolungata, prenotazione della popolazione, code e rimborsi, ritirata, mantenimento posizione, attacchi a distanza, danni ad area, conquista e perdita dell’avamposto, ondate, assalto e riavvio. Usano una simulazione accelerata in una VM; le interazioni e il disegno richiedono anche una prova nel browser.
+I test verificano raccolta ed esaurimento, arrivi diagonali e raccolta prolungata, prenotazione della popolazione, code e rimborsi, ritirata, mantenimento posizione, attacchi a distanza, danni ad area, conquista e perdita dell’avamposto, ondate, assalto e riavvio. I test del secondo livello coprono inoltre conquista fra tre fazioni, depositi multipli, limite 24 con prenotazioni, attacchi fra rivali, ondate alternate, eliminazione dei fronti e passaggio fra livelli. Usano una simulazione accelerata in una VM; le interazioni e il disegno richiedono anche una prova nel browser.
 
-`rules.js` raccoglie costi, statistiche e parametri dell’avamposto per facilitare il bilanciamento. `game.js` gestisce simulazione, comandi e Canvas. La diagnostica `window.__rtsDebug.snapshot()` restituisce solo un riepilogo dello stato.
+`rules.js` raccoglie costi, statistiche e le configurazioni `RTS_LEVELS` (mappe, popolazione, risorse, avamposti e fortezze) per facilitare il bilanciamento. `game.js` gestisce simulazione, comandi e Canvas. La diagnostica `window.__rtsDebug.snapshot()` restituisce solo un riepilogo dello stato.
 
-Il progetto resta single-player con mappa fissa, movimento diretto e IA a ondate. Ricerca dei percorsi intorno agli ostacoli, nebbia di guerra, salvataggi e multiplayer sono sviluppi futuri. Il bilanciamento può essere ulteriormente affinato con partite reali.
+Il progetto resta single-player con due mappe fisse, movimento diretto e IA a ondate. Ricerca dei percorsi intorno agli ostacoli, nebbia di guerra, salvataggi e multiplayer sono sviluppi futuri. Il bilanciamento può essere ulteriormente affinato con partite reali.
 
 ```text
 terre-di-confine/

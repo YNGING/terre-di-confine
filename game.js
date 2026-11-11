@@ -4,7 +4,8 @@
   const $ = (id) => document.getElementById(id);
   const canvas = $('game'), ctx = canvas.getContext('2d', { alpha: false });
   const mini = $('minimap'), mctx = mini.getContext('2d');
-  const W = 2400, H = 1600, TWO_PI = Math.PI * 2;
+  const TWO_PI = Math.PI * 2;
+  let level = window.RTS_LEVELS[0], W = level.width, H = level.height;
   const RULES = window.RTS_RULES, COST = RULES.costs, TYPE_NAMES = RULES.names;
   const state = {
     wood: 200, gold: 110, popCap: RULES.population, time: 0, wave: 1,
@@ -12,7 +13,7 @@
     units: [], buildings: [], nodes: [], decorations: [], particles: [],
     selected: [], camera: { x: 0, y: 0 }, width: 900, height: 600,
     pointer: null, mouse: { x: 0, y: 0 }, keys: new Set(),
-    toastUntil: 0, lastHud: -1, idSequence: 0, effects: [], outpost: null,
+    toastUntil: 0, lastHud: -1, idSequence: 0, effects: [], outpost: null, outposts: [], postIndex: 0, nextLevel: false,
     stats: { killed: 0, trained: 0, gathered: 0 }
   };
   const uid = () => ++state.idSequence;
@@ -31,10 +32,14 @@
   const isUnit = (entity) => !!entity && !!RULES.units[entity.type];
   const reservedPopulation = () => state.buildings.filter(alive).reduce((sum, b) => sum + b.queue.length, 0);
   const canRecruit = (price) => canPay(price) && playerUnits().length + reservedPopulation() < state.popCap;
-  const ownsOutpost = () => state.outpost.owner === 'player';
+  const ownsOutpost = () => state.outposts.some(p => p.owner === 'player');
+  const isEnemy = team => team === 'enemy' || team === 'enemy2';
+  const teamName = team => team === 'player' ? 'Alleato' : team === 'neutral' ? 'Neutrale' : level.enemies.find(e => e.team === team)?.name || 'Nemico';
+  const teamColor = team => team === 'player' ? '#91d6b8' : team === 'enemy2' ? '#c49aed' : team === 'enemy' ? '#e98b7b' : '#dfcb8e';
+  const waveFront = () => level.enemies[level.id === 2 && state.wave >= 3 && state.wave % 2 === 1 ? 1 : 0];
   const spend = (price) => { if (!canPay(price)) return false; state.wood -= price.wood; state.gold -= price.gold; return true; };
   const keep = (team) => state.buildings.find(b => b.type === 'keep' && b.team === team);
-  const named = (entity) => `${TYPE_NAMES[entity.type] || entity.type}${entity.team === 'enemy' ? ' nemico' : ''}`;
+  const named = (entity) => `${TYPE_NAMES[entity.type] || entity.type}${isEnemy(entity.team) ? ` · ${teamName(entity.team)}` : ''}`;
 
   function createUnit(type, team, x, y, order = null) {
     const c = RULES.units[type], u = { id: uid(), type, team, x, y, hp: c.hp, maxHp: c.hp,
@@ -44,7 +49,7 @@
     return u;
   }
   function createBuilding(type, team, x, y, progress = 1) {
-    const hp = type === 'keep' ? (team === 'enemy' ? 1400 : 1000) : 360;
+    const hp = type === 'keep' ? (isEnemy(team) ? level.enemyHp : 1000) : 360;
     const b = { id: uid(), type, team, x, y, hp: Math.max(75, hp * progress),
       maxHp: hp, progress, queue: [], rally: null, cooldown: 0 };
     state.buildings.push(b);
@@ -55,34 +60,41 @@
       stock: type === 'wood' ? 500 : 380 });
   }
 
-  function resetWorld() {
+  function resetWorld(levelId = level.id) {
+    level = window.RTS_LEVELS.find(l => l.id === levelId) || window.RTS_LEVELS[0];
+    W = level.width; H = level.height;
+    state.nextLevel = false; state.postIndex = 0;
     state.idSequence = 0; state.wood = 200; state.gold = 110; state.time = 0;
-    state.wave = 1; state.waveIn = RULES.firstWave; state.running = false; state.ended = false;
+    state.wave = 1; state.waveIn = level.firstWave; state.running = false; state.ended = false;
     state.mode = 'select'; state.units = []; state.buildings = []; state.nodes = [];
     state.particles = []; state.effects = []; state.selected = []; state.toastUntil = 0;
-    state.pointer = null; state.keys.clear(); state.popCap = RULES.population;
-    state.outpost = { ...RULES.outpost, type: 'outpost', control: 0, owner: 'neutral', contested: false, incomeClock: 0 };
+    state.pointer = null; state.keys.clear(); state.popCap = level.population;
+    state.outposts = level.posts.map((p, i) => ({ ...RULES.outpost, ...p, id: `post-${i}`,
+      type: 'outpost', control: 0, owner: 'neutral', capturingTeam: null, contested: false, incomeClock: 0 }));
+    state.outpost = state.outposts[0]; // First post remains the level-1 diagnostic alias.
     $('dragBox').classList.add('hidden');
     state.stats = { killed: 0, trained: 0, gathered: 0 }; state.lastHud = -1;
-    createBuilding('keep', 'player', 450, 795);
-    createBuilding('keep', 'enemy', 2040, 795);
-    createUnit('worker', 'player', 350, 876);
-    createUnit('worker', 'player', 438, 908);
-    createUnit('worker', 'player', 535, 880);
-    createUnit('soldier', 'player', 575, 738);
-    createUnit('soldier', 'player', 595, 813);
-    createUnit('raider', 'enemy', 1927, 709, { type: 'guard', x: 1927, y: 709 });
-    createUnit('raider', 'enemy', 1930, 892, { type: 'guard', x: 1930, y: 892 });
-    createUnit('archer', 'enemy', 2020, 850, { type: 'guard', x: 2020, y: 850 });
-    [ [790,425], [975,565], [710,1200], [1250,350], [1290,1090],
-      [1480,1300], [1710,440], [2010,330], [2040,1240] ].forEach(p => addNode('wood', ...p));
-    [ [850,925], [1120,1280], [1405,495], [1680,1100], [2170,1100] ].forEach(p => addNode('gold', ...p));
+    const [x, y] = level.player;
+    createBuilding('keep', 'player', x, y);
+    for (const e of level.enemies) {
+      createBuilding('keep', e.team, e.x, e.y);
+      for (const [type, dx, dy] of [['raider', -113, -86], ['raider', -110, 97], ['archer', -20, 55]]) {
+        createUnit(type, e.team, e.x + dx, e.y + dy, { type: 'guard', x: e.x + dx, y: e.y + dy });
+      }
+    }
+    createUnit('worker', 'player', x - 100, y + 81);
+    createUnit('worker', 'player', x - 12, y + 113);
+    createUnit('worker', 'player', x + 85, y + 85);
+    createUnit('soldier', 'player', x + 125, y - 57);
+    createUnit('soldier', 'player', x + 145, y + 18);
+    level.wood.forEach(p => addNode('wood', ...p));
+    level.gold.forEach(p => addNode('gold', ...p));
     state.decorations = [];
     for (let i = 0; i < 750; i++) {
       const x = 35 + hash(i, 8) * (W - 70), y = 35 + hash(i, 13) * (H - 70);
       state.decorations.push({ x, y, r: hash(i, 4), kind: hash(i, 6) });
     }
-    centerCamera(state.width < 800 ? 470 : 680, 790);
+    centerCamera(x + (state.width < 800 ? 20 : 230), y - 5);
     $('placementNotice').classList.add('hidden');
     $('cancelOrderBtn').classList.add('hidden');
     updateHud();
@@ -130,10 +142,15 @@
     $('population').textContent = `${playerUnits().length}${reserved ? ` +${reserved}` : ''} / ${state.popCap}`;
     $('population').title = 'Unità vive + posti prenotati in coda';
     $('timer').textContent = fmtTime(state.time);
-    $('waveText').textContent = `ONDATA ${state.wave} · ${Math.ceil(Math.max(0, state.waveIn))}s`;
-    const post = state.outpost;
-    const ownerLabel = post.owner === 'player' ? 'Alleato' : post.owner === 'enemy' ? 'Nemico' : 'Neutrale';
-    $('outpostStatus').textContent = `Avamposto: ${post.contested ? 'conteso' : ownerLabel.toLowerCase()} · ${Math.round(Math.abs(post.control) * 100)}%`;
+    const front = waveFront();
+    $('waveText').textContent = `${level.id === 2 ? (alive(keep(front.team)) ? front.name.toUpperCase() : 'TREGUA') + ' · ' : ''}ONDATA ${state.wave} · ${Math.ceil(Math.max(0, state.waveIn))}s`;
+    const remaining = state.buildings.filter(b => b.type === 'keep' && isEnemy(b.team) && alive(b)).length;
+    $('objectiveText').textContent = level.id === 1 ? 'Distruggi la fortezza nemica' : `Distruggi le fortezze rivali · ${2 - remaining}/2`;
+    $('levelLabel').textContent = `LIVELLO ${level.id} · ${level.name.toUpperCase()}`;
+    const post = state.selected.length === 1 && state.selected[0].type === 'outpost' ? state.selected[0] : state.outposts[state.postIndex];
+    const ownerLabel = teamName(post.owner);
+    $('outpostStatus').textContent = `${level.id === 2 ? `Avamposti ${state.outposts.filter(p => p.owner === 'player').length}/3 · ${post.name.replace('Avamposto ', '')}` : 'Avamposto'}: ${post.contested ? 'conteso' : ownerLabel.toLowerCase()} · ${Math.round(Math.abs(post.control) * 100)}%`;
+    $('outpostStatus').title = level.id === 2 ? 'Clicca per scorrere e selezionare i tre avamposti' : 'Centra e seleziona l’avamposto';
     $('outpostStatus').dataset.owner = post.contested ? 'contested' : post.owner;
     $('idleBtn').textContent = `⚒ Inattivi: ${playerUnits().filter(u => u.type === 'worker' && !u.order).length}`;
     const sel = selectedAlive(), first = sel[0];
@@ -142,11 +159,11 @@
     let cmd = '', badges = '';
     if (!sel.length) {
       title.textContent = 'Nessuna selezione';
-      description.textContent = 'Sviluppa la base e conquista l’avamposto centrale per ottenere oro e reclutare maghi.';
+      description.textContent = level.id === 1 ? 'Sviluppa la base e conquista l’avamposto centrale per ottenere oro e reclutare maghi.' : 'Conquista gli avamposti per oro e depositi. Ne basta uno per reclutare maghi. Rossi e Viola sono rivali: elimina entrambe le fortezze.';
       hint.textContent = 'Clic: seleziona · clic destro: ordina · G: esercito · I: contadino inattivo';
     } else if (first.type === 'outpost' && sel.length === 1) {
-      title.textContent = 'Avamposto del confine';
-      description.textContent = 'Mantieni truppe nel cerchio per conquistarlo. Offre 8 oro ogni 8s, deposito risorse e accesso ai maghi.';
+      title.textContent = post.name;
+      description.textContent = `Mantieni truppe nel cerchio per conquistarlo. Offre ${post.gold} oro ogni ${post.incomeTime}s, deposito risorse e accesso ai maghi.`;
       badges = `<span class="stat-pill">${ownerLabel} · ${Math.round(Math.abs(post.control) * 100)}%</span>`;
       if (post.contested) badges += '<span class="stat-pill">Conteso: rendita e deposito sospesi</span>';
       hint.textContent = 'Solo le unità militari conquistano. Il nemico può riprenderlo; i maghi già in coda restano disponibili.';
@@ -240,7 +257,7 @@
   function validBuild(x, y) {
     const home = keep('player');
     if (x < 80 || y < 105 || x > W - 80 || y > H - 95 || dist(pos(x,y),home) > 635) return false;
-    return dist(state.outpost, { x, y }) > 150 && !state.buildings.some(b => alive(b) && dist(b, {x,y}) < (b.type === 'keep' ? 145 : 105)) &&
+    return state.outposts.every(p => dist(p, { x, y }) > 150) && !state.buildings.some(b => alive(b) && dist(b, {x,y}) < (b.type === 'keep' ? 145 : 105)) &&
       !state.nodes.some(n => n.stock > 0 && dist(n, {x,y}) < n.r + 65);
   }
   function recruit(type) {
@@ -305,7 +322,8 @@
       if (!alive(b)) continue;
       if (Math.abs(b.x - x) < (b.type === 'keep' ? 63 : 50) && Math.abs(b.y - y) < (b.type === 'keep' ? 55 : 43)) return b;
     }
-    if (dist(state.outpost, { x, y }) < 50) return state.outpost;
+    const post = state.outposts.find(p => dist(p, { x, y }) < 50);
+    if (post) return post;
     for (const n of state.nodes) if (n.stock > 0 && dist(n, {x,y}) < n.r + 11) return n;
     return null;
   }
@@ -335,7 +353,7 @@
       workers.forEach(u => { u.order = { type: 'harvest', nodeId: target.id, resource: target.type, stage: u.carry ? 'return' : 'approach' }; });
       toast(target.type === 'wood' ? 'Contadini inviati a tagliare legna.' : 'Contadini inviati a estrarre oro.'); return;
     }
-    if (target && target.team === 'enemy' && alive(target)) {
+    if (target && isEnemy(target.team) && alive(target)) {
       army.forEach(u => { u.order = { type: 'attack', targetId: target.id }; });
       toast('Bersaglio prioritario assegnato!'); return;
     }
@@ -343,7 +361,7 @@
       army.filter(u => u.type === 'worker').forEach(u => { u.order = { type: 'build', targetId: target.id }; });
       toast('Contadini inviati a costruire.'); return;
     }
-    if ((target?.type === 'keep' && target.team === 'player') || (target?.type === 'outpost' && ownsOutpost() && !state.outpost.contested)) {
+    if ((target?.type === 'keep' && target.team === 'player') || (target?.type === 'outpost' && target.owner === 'player' && !target.contested)) {
       const carriers = army.filter(u => u.type === 'worker' && u.carry);
       carriers.forEach(u => { u.order = { type: 'deposit' }; });
       if (carriers.length === army.length) return;
@@ -384,14 +402,18 @@
     }
     return best;
   }
-  function damage(victim, amount) {
+  function damage(victim, amount, attackerTeam = null) {
     if (!alive(victim)) return;
     victim.hp = Math.max(0, victim.hp - amount);
     if (!alive(victim)) {
       burst(victim.x, victim.y, '#f9c17a', 18, .9);
-      if (victim.team === 'enemy' && isUnit(victim)) state.stats.killed++;
+      if (attackerTeam === 'player' && isEnemy(victim.team) && isUnit(victim)) state.stats.killed++;
       if (victim.queue) victim.queue = []; // Destruction releases reserved population.
-      if (victim.type === 'keep') finish(victim.team === 'enemy');
+      if (victim.type === 'keep') {
+        if (victim.team === 'player') finish(false);
+        else if (!state.buildings.some(b => b.type === 'keep' && isEnemy(b.team) && alive(b))) finish(true);
+        else toast(`Fortezza dei ${teamName(victim.team)} distrutta: niente più rinforzi da quel fronte!`);
+      }
     }
   }
   function attackEffect(u, victim, kind) {
@@ -407,15 +429,15 @@
     u.cooldown = u.attackTime; u.swing = .24;
     const building = !isUnit(victim);
     const multiplier = building ? (u.type === 'mage' ? .35 : u.type === 'archer' ? .45 : 1) : 1;
-    damage(victim, u.damage * multiplier);
+    damage(victim, u.damage * multiplier, u.team);
     if (u.type === 'mage') {
       attackEffect(u, victim, 'magic');
       // Snapshot the impact position; only enemy units take splash damage.
       for (const other of state.units) {
-        if (other !== victim && other.team !== u.team && alive(other) && dist(other, victim) <= RULES.units.mage.splash) damage(other, u.damage * .6);
+        if (other !== victim && other.team !== u.team && alive(other) && dist(other, victim) <= RULES.units.mage.splash) damage(other, u.damage * .6, u.team);
       }
     } else if (u.type === 'archer') attackEffect(u, victim, 'arrow');
-    else burst(victim.x, victim.y - 13, victim.team === 'enemy' ? '#ed9f73' : '#ecd18e', 4, .43);
+    else burst(victim.x, victim.y - 13, isEnemy(victim.team) ? '#ed9f73' : '#ecd18e', 4, .43);
     return false;
   }
   function nearestResource(u, type) {
@@ -423,7 +445,7 @@
   }
   function depositCargo(u, dt) {
     const destinations = state.buildings.filter(b => b.type === 'keep' && b.team === 'player' && alive(b));
-    if (ownsOutpost() && !state.outpost.contested) destinations.push(state.outpost);
+    destinations.push(...state.outposts.filter(p => p.owner === 'player' && !p.contested));
     const home = destinations.sort((a, b) => dist(u, a) - dist(u, b))[0];
     if (!home || !moveTo(u, home, home.type === 'keep' ? 79 : 52, dt)) return false;
     if (u.carry) {
@@ -500,7 +522,8 @@
       return;
     }
     if (job?.type === 'raid') {
-      if (job.viaOutpost && state.outpost.owner !== 'enemy') moveTo(u, state.outpost, 65, dt);
+      const post = state.outposts.find(p => p.id === job.postId) || state.outpost;
+      if (job.viaOutpost && post.owner !== u.team) moveTo(u, post, 65, dt);
       else performAttack(u, getEntity(job.targetId), dt);
     } else if (job?.type === 'attack-move' || job?.type === 'guard') {
       if (job.type === 'attack-move') {
@@ -526,27 +549,32 @@
     }
   }
   function updateOutpost(dt) {
-    const p = state.outpost;
-    const presence = team => state.units.some(u => alive(u) && u.type !== 'worker' && u.team === team && dist(u, p) <= p.radius);
-    const player = presence('player'), enemy = presence('enemy');
-    p.contested = player && enemy;
-    if (!p.contested && (player || enemy)) {
-      p.control = clamp(p.control + (player ? 1 : -1) * dt / p.captureTime, -1, 1);
-      // Ownership is lost at the midpoint; a full capture is needed to gain it.
+    for (const p of state.outposts) {
+      const teams = [...new Set(state.units.filter(u => alive(u) && u.type !== 'worker' && dist(u, p) <= p.radius).map(u => u.team))];
+      p.contested = teams.length > 1;
       const oldOwner = p.owner;
-      if ((p.owner === 'player' && p.control <= 0) || (p.owner === 'enemy' && p.control >= 0)) p.owner = 'neutral';
-      if (p.control >= 1) p.owner = 'player';
-      if (p.control <= -1) p.owner = 'enemy';
+      if (teams.length === 1) {
+        const team = teams[0], sign = team === 'player' ? 1 : -1;
+        const controller = p.owner !== 'neutral' ? p.owner : p.capturingTeam;
+        if (controller && controller !== team && Math.abs(p.control) > 0) {
+          p.control = Math.sign(p.control) * Math.max(0, Math.abs(p.control) - dt / p.captureTime);
+          if (Math.abs(p.control) < 1e-9) { p.control = 0; p.owner = 'neutral'; p.capturingTeam = null; }
+        } else {
+          p.capturingTeam = team;
+          p.control = sign * Math.min(1, Math.abs(p.control) + dt / p.captureTime);
+          if (Math.abs(p.control) >= 1) p.owner = team;
+        }
+      }
       if (oldOwner !== p.owner) {
         p.incomeClock = 0;
-        toast(p.owner === 'player' ? 'Avamposto conquistato! Maghi sbloccati, +8 oro ogni 8s.' : p.owner === 'enemy' ? 'Il nemico controlla l’avamposto!' : 'Avamposto neutralizzato!');
+        toast(p.owner === 'player' ? `${p.name} conquistato! Maghi sbloccati, +${p.gold} oro ogni ${p.incomeTime}s.` : `${p.name}: ${teamName(p.owner).toLowerCase()}.`);
       }
-    }
-    if (ownsOutpost() && !p.contested) {
-      p.incomeClock += dt;
-      if (p.incomeClock >= p.incomeTime) {
-        p.incomeClock -= p.incomeTime; state.gold += p.gold;
-        floating(p.x, p.y - 95, `+${p.gold} oro`, '#ebcc7a');
+      if (p.owner === 'player' && !p.contested) {
+        p.incomeClock += dt;
+        if (p.incomeClock >= p.incomeTime) {
+          p.incomeClock -= p.incomeTime; state.gold += p.gold;
+          floating(p.x, p.y - 95, `+${p.gold} oro`, '#ebcc7a');
+        }
       }
     }
   }
@@ -558,30 +586,35 @@
       const enemies = state.units.filter(u => alive(u) && u.team !== b.team && dist(u, b) <= 235);
       enemies.sort((a, c) => dist(a, b) - dist(c, b));
       if (!enemies.length) continue;
-      b.cooldown = 1.5; damage(enemies[0], b.team === 'enemy' ? 14 : 10); attackEffect(b, enemies[0], 'arrow');
+      b.cooldown = 1.5; damage(enemies[0], isEnemy(b.team) ? 14 : 10, b.team); attackEffect(b, enemies[0], 'arrow');
     }
   }
   function startWave() {
-    const home = keep('enemy');
-    if (!alive(home)) return;
-    const troops = Math.min(9, 1 + state.wave);
-    for (let i = 0; i < troops; i++) {
-      const type = state.wave >= 6 && i === troops - 1 ? 'mage' : state.wave >= 3 && i % 3 === 2 ? 'archer' : 'raider';
-      createUnit(type, 'enemy', home.x - 110 - (i % 3) * 25, home.y + (i - (troops - 1) / 2) * 34,
-        { type: 'raid', targetId: keep('player').id, viaOutpost: state.wave % 2 === 0 });
-    }
-    toast(`Ondata ${state.wave}: ${troops} nemici ${state.wave % 2 === 0 ? 'verso l’avamposto' : 'verso il castello'}!`);
+    const front = waveFront(), home = keep(front.team);
+    // A defeated front leaves its scheduled slot empty, rewarding the first siege.
+    if (alive(home)) {
+      const troops = Math.min(level.waveCap, 1 + state.wave);
+      const viaOutpost = level.id === 1 ? state.wave % 2 === 0 : state.wave % 4 >= 2;
+      for (let i = 0; i < troops; i++) {
+        const type = state.wave >= 6 && i === troops - 1 ? 'mage' : state.wave >= 3 && i % 3 === 2 ? 'archer' : 'raider';
+        createUnit(type, front.team, home.x - 110 - (i % 3) * 25, home.y + (i - (troops - 1) / 2) * 34,
+          { type: 'raid', targetId: keep('player').id, viaOutpost, postId: state.outposts[front.post].id });
+      }
+      toast(`Ondata ${state.wave}: ${troops} ${front.name.toLowerCase()} ${viaOutpost ? 'verso l’avamposto' : 'verso il castello'}!`);
+    } else toast(`Il fronte dei ${front.name} è caduto: tempo per riorganizzarsi.`);
     state.wave++; state.waveIn = Math.max(38, 65 - state.wave * 2);
   }
   function finish(won) {
     if (state.ended) return;
-    state.ended = true; state.running = false; cancelBuild();
+    state.ended = true; state.running = false; state.nextLevel = won && level.id === 1; cancelBuild();
+    $('levelPicker').classList.add('hidden');
+    $('chooseLevelBtn').classList.remove('hidden');
     $('modalTitle').textContent = won ? 'Il regno è salvo!' : 'Il castello è caduto';
     $('modalSubtitle').textContent = won
-      ? `Vittoria in ${fmtTime(state.time)}! Hai distrutto la fortezza nemica. Nemici sconfitti: ${state.stats.killed}. Risorse raccolte: ${state.stats.gathered}.`
+      ? `Vittoria in ${fmtTime(state.time)}! Hai distrutto ${level.id === 1 ? 'la fortezza nemica' : 'entrambe le fortezze rivali'}. Nemici sconfitti: ${state.stats.killed}. Risorse raccolte: ${state.stats.gathered}.`
       : `La fortezza nemica ha trionfato. Hai resistito ${fmtTime(state.time)} e sconfitto ${state.stats.killed} nemici. Puoi riprovare con una strategia diversa.`;
     $('modalGuide').classList.add('hidden');
-    $('modalButton').innerHTML = 'Gioca ancora <span aria-hidden="true">↻</span>';
+    $('modalButton').innerHTML = state.nextLevel ? 'Livello successivo <span aria-hidden="true">→</span>' : 'Riprova il livello <span aria-hidden="true">↻</span>';
     $('modal').classList.remove('hidden');
   }
   function update(dt) {
@@ -660,8 +693,16 @@
         ctx.beginPath();ctx.moveTo(gx,gy+4);ctx.lineTo(gx-2,gy-3);ctx.moveTo(gx,gy+4);ctx.lineTo(gx+3,gy-4);ctx.stroke();
       }
     }
-    // A winding, pebbly road visually joins the two castles.
-    ctx.beginPath();ctx.moveTo(467,794);ctx.bezierCurveTo(900,699,1260,955,2045,789);
+    // Scenario roads show the two fronts without introducing blocking terrain.
+    ctx.beginPath();
+    if (level.id === 1) { ctx.moveTo(467,794);ctx.bezierCurveTo(900,699,1260,955,2045,789); }
+    else {
+      ctx.moveTo(450,1000);ctx.lineTo(1050,1000);
+      for (const front of level.enemies) {
+        const p = state.outposts[front.post];
+        ctx.moveTo(1050,1000);ctx.bezierCurveTo(1330,1000,p.x-220,p.y,p.x,p.y);ctx.lineTo(front.x,front.y);
+      }
+    }
     ctx.strokeStyle='#a5946e';ctx.lineWidth=93;ctx.lineCap='round';ctx.stroke();
     ctx.strokeStyle='#b5a37c';ctx.lineWidth=77;ctx.stroke();
     ctx.strokeStyle='#cfba8c38';ctx.lineWidth=67;ctx.stroke();
@@ -703,7 +744,7 @@
     ellipse(x,y+29,18,9,'#544e368a');ctx.font='bold 13px system-ui';ctx.textAlign='center';ctx.fillStyle='#ffe5a1';ctx.fillText('◆',x,y+33);
   }
   function drawKeep(b) {
-    const enemy=b.team==='enemy', x=b.x,y=b.y;
+    const enemy=isEnemy(b.team), x=b.x,y=b.y;
     ctx.save();ctx.translate(x,y);
     ellipse(3,41,81,39,'#152d2488');
     roundedRect(-58,-28,116,79,7,'#827f6a');
@@ -716,12 +757,12 @@
       for(let i=-15;i<=15;i+=12)roundedRect(sx+i-6,-61,11,17,2,'#d3c8a8');
       roundedRect(sx-5,-19,10,15,2,'#4e5048');
     }
-    ctx.beginPath();ctx.moveTo(-57,-36);ctx.lineTo(0,-82);ctx.lineTo(57,-36);ctx.closePath();ctx.fillStyle=enemy?'#8b4138':'#386b69';ctx.fill();
-    ctx.beginPath();ctx.moveTo(-56,-36);ctx.lineTo(0,-82);ctx.lineTo(-1,-36);ctx.closePath();ctx.fillStyle=enemy?'#aa584a':'#578b84';ctx.fill();
-    ctx.strokeStyle=enemy?'#5e332f':'#23524f';ctx.lineWidth=2;ctx.stroke();
+    ctx.beginPath();ctx.moveTo(-57,-36);ctx.lineTo(0,-82);ctx.lineTo(57,-36);ctx.closePath();ctx.fillStyle=b.team==='enemy2'?'#684778':enemy?'#8b4138':'#386b69';ctx.fill();
+    ctx.beginPath();ctx.moveTo(-56,-36);ctx.lineTo(0,-82);ctx.lineTo(-1,-36);ctx.closePath();ctx.fillStyle=b.team==='enemy2'?'#9464ad':enemy?'#aa584a':'#578b84';ctx.fill();
+    ctx.strokeStyle=b.team==='enemy2'?'#493052':enemy?'#5e332f':'#23524f';ctx.lineWidth=2;ctx.stroke();
     roundedRect(-16,10,32,36,15,'#524633');roundedRect(-11,14,22,32,11,'#312d27');
     ctx.strokeStyle='#524d42';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(27,-77);ctx.lineTo(27,-124);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(28,-119);ctx.lineTo(66,-109);ctx.lineTo(28,-97);ctx.closePath();ctx.fillStyle=enemy?'#c4674b':'#d8c289';ctx.fill();
+    ctx.beginPath();ctx.moveTo(28,-119);ctx.lineTo(66,-109);ctx.lineTo(28,-97);ctx.closePath();ctx.fillStyle=b.team==='enemy2'?'#ad79d7':enemy?'#c4674b':'#d8c289';ctx.fill();
     ctx.fillStyle=enemy?'#eac79f':'#3e5f50';ctx.font='bold 15px Georgia';ctx.textAlign='center';ctx.fillText('✦',43,-105);
     ctx.restore();
   }
@@ -762,18 +803,19 @@
   }
   function drawUnit(u) {
     ctx.save();ctx.translate(u.x,u.y);
-    const isWorker=u.type==='worker',enemy=u.team==='enemy';
+    const isWorker=u.type==='worker',enemy=isEnemy(u.team);
     if(state.selected.includes(u)){
       ellipse(0,2,19,10,'#d5cb735c');
       ctx.strokeStyle='#f8e4a5';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(0,2,19,10,0,0,TWO_PI);ctx.stroke();
     }
     ellipse(2,6,13,6,'#1a342670');
+    if (u.team === 'enemy2') ellipse(0,5,14,7,'#bd85e880');
     const stride=Math.sin(state.time*10+u.id)*1.7;
     roundedRect(-7,-1,6,14,3,enemy?'#493132':'#353b32');
     roundedRect(2,-1,6,14,3,enemy?'#493132':'#353b32');
-    ctx.fillStyle=isWorker?'#806f4c':u.type==='mage'?(enemy?'#773a66':'#685298'):u.type==='archer'?(enemy?'#884b36':'#466c3d'):enemy?'#953f39':'#386e73';
+    ctx.fillStyle=isWorker?'#806f4c':u.team==='enemy2'?'#75478e':u.type==='mage'?(enemy?'#773a66':'#685298'):u.type==='archer'?(enemy?'#884b36':'#466c3d'):enemy?'#953f39':'#386e73';
     ctx.beginPath();ctx.moveTo(-10,-12);ctx.lineTo(10,-12);ctx.lineTo(12,4);ctx.lineTo(-11,4);ctx.closePath();ctx.fill();
-    roundedRect(-11,-12,22,4,2,isWorker?'#ae925c':enemy?'#c76a52':'#5c9a98');
+    roundedRect(-11,-12,22,4,2,isWorker?'#ae925c':u.team==='enemy2'?'#ba8cdd':enemy?'#c76a52':'#5c9a98');
     ctx.beginPath();ctx.arc(0,-18,8.7,0,TWO_PI);ctx.fillStyle='#deb68c';ctx.fill();
     if(isWorker){
       roundedRect(-10,-24,20,6,2,'#67513a');
@@ -790,14 +832,14 @@
       ctx.strokeStyle='#b39b6b';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(15,7);ctx.lineTo(18,-30);ctx.stroke();
       ellipse(18,-33,7,7,'#b9a2f163');ellipse(18,-33,3.5,4,u.swing?'#ffffff':'#d6b8ff');
     } else if (u.type === 'archer') {
-      ctx.beginPath();ctx.arc(0,-20,10,Math.PI,TWO_PI);ctx.lineTo(11,-15);ctx.lineTo(5,-17);ctx.lineTo(-9,-17);ctx.closePath();ctx.fillStyle=enemy?'#b57756':'#739157';ctx.fill();
+      ctx.beginPath();ctx.arc(0,-20,10,Math.PI,TWO_PI);ctx.lineTo(11,-15);ctx.lineTo(5,-17);ctx.lineTo(-9,-17);ctx.closePath();ctx.fillStyle=u.team==='enemy2'?'#b381cb':enemy?'#b57756':'#739157';ctx.fill();
       ctx.strokeStyle='#d4b578';ctx.lineWidth=2.5;ctx.beginPath();ctx.ellipse(13,-8,9,17,0,-Math.PI/2,Math.PI/2);ctx.stroke();
       ctx.strokeStyle='#e4dcc1';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(13,-25);ctx.lineTo(u.swing?6:13,-8);ctx.lineTo(13,9);ctx.stroke();
       ctx.beginPath();ctx.moveTo(5,-8);ctx.lineTo(28,-8);ctx.stroke();
     } else {
       ctx.beginPath();ctx.arc(0,-21,9,Math.PI,TWO_PI);ctx.lineTo(9,-19);ctx.lineTo(-9,-19);ctx.fillStyle=enemy?'#82706c':'#a7afb0';ctx.fill();
       roundedRect(-11,-23,22,4,2,enemy?'#a9998e':'#c9cbd0');
-      ctx.beginPath();ctx.ellipse(-12,-4,7,10,-.20,0,TWO_PI);ctx.fillStyle=enemy?'#b66d49':'#d4be7b';ctx.fill();
+      ctx.beginPath();ctx.ellipse(-12,-4,7,10,-.20,0,TWO_PI);ctx.fillStyle=u.team==='enemy2'?'#b381cb':enemy?'#b66d49':'#d4be7b';ctx.fill();
       ctx.beginPath();ctx.ellipse(-12,-4,4,7,-.20,0,TWO_PI);ctx.fillStyle=enemy?'#6a3b35':'#476a63';ctx.fill();
       ctx.strokeStyle='#cdd0cd';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(12,-5);ctx.lineTo(16,-25-(u.swing?8:0));ctx.stroke();
     }
@@ -812,8 +854,8 @@
       ctx.restore();
     }
   }
-  function drawOutpost() {
-    const p = state.outpost, color = p.owner === 'player' ? '#91d6b8' : p.owner === 'enemy' ? '#e98b7b' : '#dfcb8e';
+  function drawOutpost(p) {
+    const color = teamColor(p.owner);
     ctx.save();
     ctx.strokeStyle = p.contested ? '#efb45e' : color; ctx.lineWidth = 2; ctx.setLineDash([8, 9]);
     ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, TWO_PI); ctx.stroke(); ctx.setLineDash([]);
@@ -825,9 +867,9 @@
     ctx.strokeStyle = '#66533a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(p.x, p.y - 65); ctx.lineTo(p.x, p.y - 110); ctx.stroke();
     ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(p.x + 1, p.y - 109); ctx.lineTo(p.x + 39, p.y - 97); ctx.lineTo(p.x + 1, p.y - 86); ctx.fill();
     roundedRect(p.x - 46, p.y + 37, 92, 7, 3, '#22352d');
-    roundedRect(p.x - 46, p.y + 37, 92 * Math.abs(p.control), 7, 3, p.control >= 0 ? '#91d6b8' : '#e98b7b');
+    roundedRect(p.x - 46, p.y + 37, 92 * Math.abs(p.control), 7, 3, teamColor(p.owner !== 'neutral' ? p.owner : p.capturingTeam));
     ctx.font = 'bold 11px system-ui'; ctx.fillStyle = '#f4e6bd'; ctx.textAlign = 'center';
-    ctx.fillText(p.contested ? 'AVAMPOSTO CONTESO' : 'AVAMPOSTO', p.x, p.y + 62);
+    ctx.fillText(p.contested ? 'AVAMPOSTO CONTESO' : p.name.toUpperCase(), p.x, p.y + 62);
     ctx.restore();
   }
   function drawEffects() {
@@ -873,7 +915,13 @@
     const mw=mini.width,mh=mini.height,sx=mw/W,sy=mh/H;
     mctx.fillStyle='#375742';mctx.fillRect(0,0,mw,mh);
     mctx.strokeStyle='#a28a6280';mctx.lineWidth=11;
-    mctx.beginPath();mctx.moveTo(45,79);mctx.bezierCurveTo(90,69,130,95,204,79);mctx.stroke();
+    mctx.beginPath();
+    if (level.id === 1) { mctx.moveTo(45,79);mctx.bezierCurveTo(90,69,130,95,204,79); }
+    else {
+      mctx.moveTo(450*sx,1000*sy);mctx.lineTo(1050*sx,1000*sy);
+      for (const e of level.enemies) { const p=state.outposts[e.post];mctx.moveTo(1050*sx,1000*sy);mctx.lineTo(p.x*sx,p.y*sy);mctx.lineTo(e.x*sx,e.y*sy); }
+    }
+    mctx.stroke();
     for(const n of state.nodes) {
       if(n.stock<=0)continue;
       mctx.fillStyle=n.type==='wood'?'#7cad72':'#dab869';
@@ -881,17 +929,23 @@
     }
     for(const b of state.buildings) {
       if(!alive(b))continue;
-      mctx.fillStyle=b.team==='player'?'#a8d2c6':'#e68b78';
+      mctx.fillStyle=teamColor(b.team);
       mctx.fillRect(b.x*sx-4,b.y*sy-4,8,8);
     }
     for(const u of state.units) {
       if(!alive(u))continue;
-      mctx.fillStyle=u.team==='player'?'#e4e2b8':'#f17e65';
+      mctx.fillStyle=teamColor(u.team);
       mctx.fillRect(u.x*sx-1.5,u.y*sy-1.5,3,3);
     }
-    const p = state.outpost;
-    mctx.fillStyle = p.owner === 'player' ? '#91d6b8' : p.owner === 'enemy' ? '#e98b7b' : '#edcf7c';
-    mctx.beginPath();mctx.moveTo(p.x*sx,p.y*sy-6);mctx.lineTo(p.x*sx+6,p.y*sy);mctx.lineTo(p.x*sx,p.y*sy+6);mctx.lineTo(p.x*sx-6,p.y*sy);mctx.closePath();mctx.fill();
+    for (const p of state.outposts) {
+      mctx.fillStyle = p.contested ? '#ffcd7e' : teamColor(p.owner);
+      mctx.beginPath();mctx.moveTo(p.x*sx,p.y*sy-6);mctx.lineTo(p.x*sx+6,p.y*sy);mctx.lineTo(p.x*sx,p.y*sy+6);mctx.lineTo(p.x*sx-6,p.y*sy);mctx.closePath();mctx.fill();
+    }
+    const next = keep(waveFront().team);
+    if (level.id === 2 && alive(next)) {
+      mctx.strokeStyle = teamColor(next.team); mctx.lineWidth = 2;
+      mctx.beginPath(); mctx.arc(next.x*sx, next.y*sy, 8 + Math.sin(state.time*3)*2, 0, TWO_PI); mctx.stroke();
+    }
     mctx.strokeStyle='#f4e6b8';mctx.lineWidth=1.5;
     mctx.strokeRect(state.camera.x*sx,state.camera.y*sy,Math.min(mw,state.width*sx),Math.min(mh,state.height*sy));
   }
@@ -901,7 +955,7 @@
     ctx.fillStyle='#4e6b4a';ctx.fillRect(0,0,state.width,state.height);
     ctx.save();ctx.translate(-state.camera.x,-state.camera.y);
     ground();
-    drawOutpost();
+    state.outposts.forEach(drawOutpost);
     for(const n of state.nodes){if(n.stock>0){if(n.type==='wood')drawTree(n);else drawGold(n);}}
     for(const b of [...state.buildings].sort((a,b)=>a.y-b.y))drawBuilding(b);
     for(const u of [...state.units].sort((a,b)=>a.y-b.y))drawUnit(u);
@@ -916,7 +970,8 @@
   }
 
   function startGame() {
-    if(state.ended)resetWorld();
+    if(state.ended)resetWorld(state.nextLevel ? 2 : level.id);
+    $('levelPicker').classList.add('hidden');
     state.running=true;state.ended=false;
     $('modal').classList.add('hidden');
     canvas.focus({preventScroll:true});
@@ -924,18 +979,23 @@
   }
   function openHelp() {
     state.running=false;state.keys.clear();
+    $('levelPicker').classList.add('hidden');
+    $('chooseLevelBtn').classList.remove('hidden');
     $('modalTitle').textContent='Come si gioca';
-    $('modalSubtitle').textContent='Partita in pausa. Raccogli risorse, costruisci una caserma e conquista l’avamposto con le truppe: otterrai oro, un deposito e accesso ai maghi. Proteggi le unità a distanza con gli armigeri.';
+    $('modalSubtitle').textContent='Partita in pausa. Conquista almeno un avamposto per reclutare maghi e depositare risorse. Ogni avamposto alleato e non conteso produce oro. Proteggi le unità a distanza con gli armigeri.';
     $('modalGuide').classList.remove('hidden');
     $('modalButton').innerHTML='Torna alla partita <span aria-hidden="true">→</span>';
     $('modal').classList.remove('hidden');
   }
-  function restart() {
-    resetWorld();
-    $('modalTitle').textContent='Terre di Confine';
-    $('modalSubtitle').textContent='Raccogli risorse, guida armigeri e arcieri, conquista l’avamposto per reclutare maghi e assalta la fortezza rivale.';
+  function restart(levelId = level.id) {
+    resetWorld(levelId);
+    $('levelSelect').value = String(level.id);
+    $('levelPicker').classList.remove('hidden');
+    $('chooseLevelBtn').classList.add('hidden');
+    $('modalTitle').textContent = `Livello ${level.id} · ${level.name}`;
+    $('modalSubtitle').textContent = level.description;
     $('modalGuide').classList.remove('hidden');
-    $('modalButton').innerHTML='Inizia la partita <span aria-hidden="true">→</span>';
+    $('modalButton').innerHTML = 'Inizia il livello <span aria-hidden="true">→</span>';
     $('modal').classList.remove('hidden');
   }
   function setupInput() {
@@ -945,8 +1005,10 @@
     $('cancelOrderBtn').addEventListener('click', cancelBuild);
     $('idleBtn').addEventListener('click', () => { if(state.running)selectIdleWorker(); });
     $('armyBtn').addEventListener('click', () => { if(state.running)selectArmy(); });
-    $('outpostStatus').addEventListener('click', () => { if(state.running){centerCamera(state.outpost.x,state.outpost.y);select(state.outpost);} });
-    $('restartBtn').addEventListener('click', restart);
+    $('outpostStatus').addEventListener('click', () => { if(state.running){const p=state.outposts[state.postIndex];centerCamera(p.x,p.y);select(p);state.postIndex=(state.postIndex+1)%state.outposts.length;} });
+    $('restartBtn').addEventListener('click', () => restart());
+    $('chooseLevelBtn').addEventListener('click', () => restart());
+    $('levelSelect').addEventListener('change', e => restart(Number(e.target.value)));
     $('commandButtons').addEventListener('click',e=>{
       const button=e.target.closest('button[data-command]');if(button&&!button.disabled)dispatchCommand(button.dataset.command);
     });
@@ -992,7 +1054,7 @@
       if(v.pointerType==='touch'){
         const thing=pick(world.x,world.y);
         if(selectedAlive().some(u=>u.team==='player'&&isUnit(u)) &&
-          (!thing || thing.stock!==undefined || thing.team==='enemy' || thing.type==='outpost' ||
+          (!thing || thing.stock!==undefined || isEnemy(thing.team) || thing.type==='outpost' ||
             (thing.type==='barracks' && thing.progress<1) ||
             (thing.type==='keep' && state.selected.some(u=>u.type==='worker'&&u.carry)))) {
           orderUnits(world.x,world.y);return;
@@ -1040,8 +1102,8 @@
     const dt=Math.min((now-last)/1000||0, .055);last=now;
     update(dt);draw();requestAnimationFrame(frame);
   }
-  resize();resetWorld();setupInput();requestAnimationFrame(frame);
+  resize();restart();setupInput();requestAnimationFrame(frame);
   // Expose a tiny read-only diagnostic surface for automated smoke tests.
-  Object.defineProperty(window,'__rtsDebug',{value:{snapshot:()=>({running:state.running,ended:state.ended,time:state.time,wood:state.wood,gold:state.gold,units:state.units.length,buildings:state.buildings.length,wave:state.wave,reserved:reservedPopulation(),outpost:state.outpost.owner,selected:state.selected.map(u=>u.type)})},configurable:false});
+  Object.defineProperty(window,'__rtsDebug',{value:{snapshot:()=>({level:level.id,width:W,height:H,popCap:state.popCap,fortresses:state.buildings.filter(b=>b.type==='keep'&&isEnemy(b.team)&&alive(b)).length,outposts:state.outposts.map(p=>({name:p.name,owner:p.owner,contested:p.contested})),camera:{...state.camera},running:state.running,ended:state.ended,time:state.time,wood:state.wood,gold:state.gold,units:state.units.length,buildings:state.buildings.length,wave:state.wave,reserved:reservedPopulation(),outpost:state.outpost.owner,selected:state.selected.map(u=>u.type)})},configurable:false});
 })();
 

@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function game() {
+function game(level = 1) {
   const elements = new Map();
   const context = new Proxy({}, { get: (o, k) => o[k] || (() => {}), set: (o, k, v) => (o[k] = v, true) });
   function element() {
@@ -28,8 +28,8 @@ function game() {
   const anchor = '  // Expose a tiny read-only diagnostic surface for automated smoke tests.';
   assert.ok(source.includes(anchor), 'test injection anchor exists');
   vm.runInContext(source.replace(anchor,
-    '  globalThis.testGame = {state, createUnit, createBuilding, resetWorld, keep, select, recruit, cancelTraining, reservedPopulation, orderUnits, update, updateWorker, updateFighter, updateOutpost, updateTraining, performAttack, damage, startWave, depositCargo, dispatchCommand};\n' + anchor), sandbox);
-  const g = sandbox.testGame; g.state.running = true;
+    '  globalThis.testGame = {state, createUnit, createBuilding, resetWorld, keep, select, recruit, cancelTraining, reservedPopulation, orderUnits, update, updateWorker, updateFighter, updateOutpost, updateTraining, performAttack, damage, startWave, depositCargo, dispatchCommand, startGame, restart, finish, validBuild};\n' + anchor), sandbox);
+  const g = sandbox.testGame; g.resetWorld(level); g.state.running = true; g.elements = elements;
   g.step = (seconds, fn = g.update) => { for (let i = 0; i < Math.ceil(seconds * 60); i++) fn(1 / 60); };
   return g;
 }
@@ -184,4 +184,132 @@ test('terminal results freeze simulation and restart clears orders, queues and t
   g.resetWorld(); assert.equal(s.ended, false); assert.equal(s.mode, 'select');
   assert.equal(g.reservedPopulation(), 0); assert.equal(s.keys.size, 0); assert.equal(s.effects.length, 0);
   assert.equal(s.outpost.owner, 'neutral'); assert.equal(s.popCap, 18);
+});
+
+
+test('level two has a larger map, independent rivals and more resources; switching restores level one', () => {
+  const g = game(2), s = g.state;
+  assert.equal(s.popCap, 24); assert.equal(s.outposts.length, 3);
+  assert.equal(s.nodes.filter(n => n.type === 'wood').length, 15);
+  assert.equal(s.nodes.filter(n => n.type === 'gold').length, 8);
+  assert.ok(g.keep('enemy')); assert.ok(g.keep('enemy2'));
+  assert.equal(s.wood, 200); assert.equal(s.gold, 110); assert.equal(s.waveIn, 75);
+  assert.equal(s.units.filter(u => u.team === 'player').length, 5);
+  g.resetWorld(1);
+  assert.equal(s.popCap, 18); assert.equal(s.outposts.length, 1);
+  assert.equal(s.nodes.length, 14); assert.equal(g.keep('enemy2'), undefined);
+  assert.equal(g.keep('enemy').hp, 1400);
+});
+
+test('any owned post unlocks magi, contest is local, and rival-to-rival capture neutralizes first', () => {
+  const g = game(2), s = g.state, [west, north, south] = s.outposts;
+  s.wood = s.gold = 1000;
+  const b = g.createBuilding('barracks', 'player', 700, 1000);
+  const northSoldier = g.createUnit('soldier', 'player', north.x, north.y);
+  g.createUnit('soldier', 'player', south.x, south.y);
+  g.step(12.1, g.updateOutpost);
+  assert.equal(west.owner, 'neutral'); assert.equal(north.owner, 'player'); assert.equal(south.owner, 'player');
+  g.select(b); g.recruit('mage'); assert.equal(b.queue.length, 1);
+  const gold = s.gold; g.step(8, g.updateOutpost); assert.equal(s.gold, gold + 12);
+  const red = g.createUnit('raider', 'enemy', north.x, north.y);
+  const beforeContest = s.gold; g.step(8, g.updateOutpost);
+  assert.equal(north.contested, true); assert.equal(south.contested, false); assert.equal(s.gold, beforeContest + 6);
+  northSoldier.x = 100; g.step(24.2, g.updateOutpost); assert.equal(north.owner, 'enemy');
+  const purple = g.createUnit('raider', 'enemy2', north.x, north.y);
+  const control = north.control; g.step(2, g.updateOutpost);
+  assert.equal(north.contested, true); assert.equal(north.control, control);
+  red.x = 100; g.step(12.05, g.updateOutpost); assert.equal(north.owner, 'neutral');
+  g.step(12.1, g.updateOutpost); assert.equal(north.owner, 'enemy2');
+  g.recruit('mage'); assert.equal(b.queue.length, 2, 'south still unlocks magi');
+  south.owner = 'neutral'; g.recruit('mage'); assert.equal(b.queue.length, 2);
+  assert.ok(purple.hp > 0);
+});
+
+test('workers use the nearest safe post and reroute when it is contested', () => {
+  const g = game(2), [west, north] = g.state.outposts;
+  west.owner = north.owner = 'player';
+  const worker = g.createUnit('worker', 'player', north.x, north.y);
+  worker.carry = 18; worker.carryType = 'gold';
+  assert.equal(g.depositCargo(worker, 1 / 60), true); assert.equal(g.state.gold, 128);
+  north.contested = true; worker.carry = 18; worker.carryType = 'wood';
+  const oldX = worker.x;
+  assert.equal(g.depositCargo(worker, 1 / 60), false); assert.ok(worker.x < oldX);
+  for (let i = 0; i < 1800 && worker.carry; i++) g.depositCargo(worker, 1 / 60);
+  assert.equal(worker.carry, 0); assert.equal(g.state.wood, 218);
+  assert.ok(Math.hypot(worker.x-west.x, worker.y-west.y) < 53);
+});
+
+test('rivals arrive on one shared wave clock and destroyed fronts stop spawning', () => {
+  const g = game(2), s = g.state;
+  g.startWave(); g.startWave();
+  assert.ok(s.units.filter(u => u.order?.type === 'raid').every(u => u.team === 'enemy'));
+  g.startWave();
+  const purple = s.units.filter(u => u.order?.type === 'raid' && u.team === 'enemy2');
+  assert.equal(purple.length, 4); assert.ok(purple.every(u => u.order.postId === s.outposts[2].id));
+  g.damage(g.keep('enemy'), 10000); assert.equal(s.ended, false);
+  const count = s.units.length; g.startWave();
+  assert.equal(s.units.length, count); assert.equal(s.wave, 5); assert.ok(s.waveIn > 0);
+  g.startWave(); assert.equal(s.units.length, count + 6);
+  g.damage(g.keep('enemy2'), 10000); assert.equal(s.ended, true); assert.equal(s.nextLevel, false);
+});
+
+test('the player can focus the purple rival; rivals fight each other including splash damage', () => {
+  const g = game(2), s = g.state;
+  const soldier = s.units.find(u => u.team === 'player' && u.type === 'soldier');
+  g.select(soldier); const purpleKeep = g.keep('enemy2'); g.orderUnits(purpleKeep.x, purpleKeep.y);
+  assert.equal(soldier.order.type, 'attack'); assert.equal(soldier.order.targetId, purpleKeep.id);
+  const red = g.createUnit('mage', 'enemy', 1300, 1000);
+  const purple = g.createUnit('raider', 'enemy2', 1400, 1000);
+  const ally = g.createUnit('raider', 'enemy', 1410, 1000);
+  g.updateFighter(red, 1 / 60);
+  assert.equal(purple.hp, purple.maxHp - 30); assert.equal(ally.hp, ally.maxHp);
+});
+
+test('population 24 includes reservations across buildings and cannot be exceeded', () => {
+  const g = game(2), s = g.state; s.wood = s.gold = 10000;
+  for (let i = 0; i < 18; i++) g.createUnit('worker', 'player', 350, 1000);
+  const b = g.createBuilding('barracks', 'player', 700, 1000);
+  g.select(b); g.recruit('archer');
+  g.select(g.keep('player')); g.recruit('worker');
+  assert.equal(g.reservedPopulation(), 1);
+  g.step(10, g.updateTraining);
+  assert.equal(s.units.filter(u => u.team === 'player').length, 24);
+});
+
+test('campaign advances after level-one victory; defeat and restart retain the selected level', () => {
+  const g = game();
+  g.damage(g.keep('enemy'), 10000); assert.equal(g.state.nextLevel, true);
+  g.startGame(); assert.equal(g.state.popCap, 24); assert.equal(g.state.running, true);
+  g.damage(g.keep('player'), 10000); assert.equal(g.state.nextLevel, false);
+  g.startGame(); assert.equal(g.state.popCap, 24); assert.equal(g.state.time, 0);
+  g.state.outposts[2].owner = 'player'; g.state.wave = 9;
+  g.restart(); assert.equal(g.state.popCap, 24); assert.equal(g.state.running, false);
+  assert.equal(g.state.wave, 1); assert.ok(g.state.outposts.every(p => p.owner === 'neutral'));
+  g.restart(1); assert.equal(g.state.popCap, 18);
+});
+
+test('a prepared level-two army can destroy both fortresses without exceeding the cap', () => {
+  const g = game(2), s = g.state;
+  s.units = s.units.filter(u => u.team !== 'player' || u.type === 'worker');
+  for (const [type, count] of [['soldier', 12], ['archer', 6], ['mage', 3]]) {
+    for (let i = 0; i < count; i++) g.createUnit(type, 'player', 2100 - (type === 'soldier' ? 0 : 120), 440 + i * 28,
+      { type: 'attack-move', x: 2540, y: 560 });
+  }
+  assert.equal(s.units.filter(u => u.team === 'player').length, 24);
+  g.step(65); assert.equal(g.keep('enemy').hp, 0); assert.equal(s.ended, false);
+  for (const u of s.units.filter(u => u.team === 'player' && u.type !== 'worker')) {
+    u.order = { type: 'attack-move', x: 2540, y: 1450 };
+  }
+  g.step(120); assert.equal(g.keep('enemy2').hp, 0); assert.equal(s.ended, true);
+});
+
+test('the defeat count credits player attacks, not fighting between rivals', () => {
+  const g = game(2), s = g.state;
+  const red = g.createUnit('raider', 'enemy', 1300, 500);
+  const purple = g.createUnit('raider', 'enemy2', 1310, 500);
+  purple.hp = 1; g.performAttack(red, purple, 1 / 60);
+  assert.equal(s.stats.killed, 0);
+  const soldier = g.createUnit('soldier', 'player', 1310, 500);
+  red.hp = 1; g.performAttack(soldier, red, 1 / 60);
+  assert.equal(s.stats.killed, 1);
 });
