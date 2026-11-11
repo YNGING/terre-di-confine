@@ -13,7 +13,7 @@
     units: [], buildings: [], nodes: [], decorations: [], particles: [],
     selected: [], camera: { x: 0, y: 0 }, width: 900, height: 600,
     pointer: null, mouse: { x: 0, y: 0 }, keys: new Set(),
-    toastUntil: 0, toastHeld: false, lastHud: -1, pings: [], alertAt: {}, groups: {}, lastGroup: null, lastClick: null, idSequence: 0, effects: [], outpost: null, outposts: [], postIndex: 0, nextLevel: false, wavePlan: null,
+    toastUntil: 0, toastHeld: false, lastHud: -1, pings: [], alertAt: {}, groups: {}, lastGroup: null, lastClick: null, placing: null, lastStandDone: false, idSequence: 0, effects: [], outpost: null, outposts: [], postIndex: 0, nextLevel: false, wavePlan: null,
     stats: { killed: 0, trained: 0, gathered: 0 }
   };
   const uid = () => ++state.idSequence;
@@ -55,6 +55,9 @@
     .filter(p => p.role === 'forge' && p.owner === team && !p.contested)
     .reduce((sum, p) => sum + (p.damageBonus || 0), 0);
   const now = () => Date.now();
+  const buildable = () => level.buildings || ['barracks'];
+  const BUILD_TEXT = { barracks: { the: 'la caserma', key: 'B', icon: '⌂' }, depot: { the: 'il magazzino', key: 'M', icon: '▣' } };
+  const priceText = c => `${c.wood} legno${c.gold ? ` · ${c.gold} oro` : ''}`;
   const frontHome = front => state.buildings.find(b => b.frontIndex === level.enemies.indexOf(front));
   const spend = (price) => { if (!canPay(price)) return false; state.wood -= price.wood; state.gold -= price.gold; return true; };
   const keep = (team) => state.buildings.find(b => b.type === 'keep' && b.team === team);
@@ -68,15 +71,16 @@
     return u;
   }
   function createBuilding(type, team, x, y, progress = 1) {
-    const hp = type === 'keep' ? (isEnemy(team) ? level.enemyHp : 1000) : type === 'camp' ? level.campHp : 360;
+    const hp = type === 'keep' ? (isEnemy(team) ? level.enemyHp : 1000) : type === 'camp' ? level.campHp
+      : type === 'bastion' ? 900 : RULES.buildings[type]?.hp ?? 360;
     const b = { id: uid(), type, team, x, y, hp: Math.max(75, hp * progress),
       maxHp: hp, progress, queue: [], rally: null, cooldown: 0 };
     state.buildings.push(b);
     return b;
   }
-  function addNode(type, x, y) {
-    state.nodes.push({ id: uid(), type, x, y, r: type === 'wood' ? 47 : 36,
-      stock: type === 'wood' ? 500 : 380 });
+  function addNode(type, x, y, stock) {
+    const base = type === 'wood' ? 500 : 380, amount = stock ?? base, rich = amount > base;
+    state.nodes.push({ id: uid(), type, x, y, r: (type === 'wood' ? 47 : 36) * (rich ? 1.2 : 1), stock: amount, rich });
   }
 
   function resetWorld(levelId = level.id) {
@@ -88,6 +92,7 @@
     state.mode = 'select'; state.units = []; state.buildings = []; state.nodes = [];
     state.particles = []; state.effects = []; state.selected = []; state.toastUntil = 0; state.toastHeld = false;
     state.pings = []; state.alertAt = {}; state.groups = {}; state.lastGroup = null; state.lastClick = null;
+    state.placing = null; state.lastStandDone = false;
     state.pointer = null; state.keys.clear(); state.popCap = level.population;
     state.outposts = level.posts.map((p, i) => ({ ...RULES.outpost, ...p, id: `post-${i}`,
       type: 'outpost', control: p.initialOwner ? -1 : 0, owner: p.initialOwner || 'neutral',
@@ -99,6 +104,7 @@
     createBuilding('keep', 'player', x, y);
     for (const e of level.enemies) {
       const b = createBuilding(e.type || 'keep', e.team, e.x, e.y);
+      if (e.hp) b.hp = b.maxHp = e.hp;
       b.frontIndex = level.enemies.indexOf(e);
       if (level.factionName) b.frontName = e.name;
       const guards = [['raider', -113, -86], ['raider', -110, 97], ['archer', -20, 55]];
@@ -106,6 +112,7 @@
         createUnit(type, e.team, e.x + dx, e.y + dy, { type: 'guard', x: e.x + dx, y: e.y + dy });
       }
     }
+    for (const [bx, by] of level.bastions || []) createBuilding('bastion', level.enemies[0].team, bx, by);
     createUnit('worker', 'player', x - 100, y + 81);
     createUnit('worker', 'player', x - 12, y + 113);
     createUnit('worker', 'player', x + 85, y + 85);
@@ -114,7 +121,8 @@
     level.wood.forEach(p => addNode('wood', ...p));
     level.gold.forEach(p => addNode('gold', ...p));
     state.decorations = [];
-    for (let i = 0; i < 750; i++) {
+    // Scatter detail in proportion to the map area (750 on the first map).
+    for (let i = 0, n = Math.round(750 * W * H / (2400 * 1600)); i < n; i++) {
       const x = 35 + hash(i, 8) * (W - 70), y = 35 + hash(i, 13) * (H - 70);
       state.decorations.push({ x, y, r: hash(i, 4), kind: hash(i, 6) });
     }
@@ -122,7 +130,7 @@
     $('placementNotice').classList.add('hidden');
     $('cancelOrderBtn').classList.add('hidden');
     const roleGuide = { market: 'Mercato: oro e deposito', arcane: 'Arcana: maghi', guard: 'Guardia: frecce', forge: 'Forgia: +20% danni' };
-    $('conquestGuide').textContent = isSiege() ? `${level.posts.map(p => roleGuide[p.role]).join('. ')}. Ogni torre sottratta al nemico riduce lo scudo della ${citadelName().toLowerCase()} del ${shieldPct()}%.` : 'Costruisci la caserma (B). Armigero: R, arciere: Q, mago: E. Tieni truppe nell’avamposto per sbloccare i maghi.';
+    $('conquestGuide').textContent = isSiege() ? `${level.posts.map(p => p.guide || roleGuide[p.role]).join('. ')}. Ogni torre sottratta al nemico riduce lo scudo della ${citadelName().toLowerCase()} del ${shieldPct()}%.${buildable().includes('depot') ? ' Magazzino: M, vicino al castello o a una torre alleata.' : ''}` : 'Costruisci la caserma (B). Armigero: R, arciere: Q, mago: E. Tieni truppe nell’avamposto per sbloccare i maghi.';
     updateHud();
   }
   function centerCamera(x, y) {
@@ -150,11 +158,11 @@
     state.toastUntil = state.time + 4.1; state.toastHeld = !ambient;
   }
   function raiseAlert(victim) {
-    const kind = victim.type === 'keep' ? 'keep' : victim.type === 'barracks' ? 'barracks' : 'worker';
+    const kind = ['keep', 'barracks', 'depot'].includes(victim.type) ? victim.type : 'worker';
     if (state.time - (state.alertAt[kind] ?? -Infinity) < RULES.alertCooldown) return;
     state.alertAt[kind] = state.time;
     state.pings.push({ x: victim.x, y: victim.y, life: 3, full: 3 });
-    toast({ keep: 'Il castello è sotto attacco!', barracks: 'Una caserma è sotto attacco!', worker: 'Contadini sotto attacco!' }[kind]);
+    toast({ keep: 'Il castello è sotto attacco!', barracks: 'Una caserma è sotto attacco!', depot: 'Un magazzino è sotto attacco!', worker: 'Contadini sotto attacco!' }[kind]);
   }
   function select(item, multi = false) {
     if (!multi) state.selected = [];
@@ -169,6 +177,10 @@
   }
   function commandButton(action, label, description, icon, disabled = false) {
     return `<button class="command-button" data-command="${action}" ${disabled ? 'disabled' : ''}><span><b>${label}</b><small>${description}</small></span><span class="command-symbol">${icon}</span></button>`;
+  }
+  function buildButtons() {
+    return buildable().map(type => commandButton(type === 'barracks' ? 'build' : `build-${type}`, `Costruisci ${TYPE_NAMES[type].toLowerCase()}`,
+      `${priceText(COST[type])} · ${BUILD_TEXT[type].key}`, BUILD_TEXT[type].icon, !canPay(COST[type]))).join('');
   }
   function updateHud() {
     $('wood').textContent = state.wood;
@@ -197,7 +209,7 @@
     let cmd = '', badges = '';
     if (!sel.length) {
       title.textContent = 'Nessuna selezione';
-      description.textContent = isSiege() ? `Conquista le torri per indebolire lo scudo. Distruggi gli accampamenti per fermare i rinforzi.${state.outposts.some(p => p.role === 'forge') ? ' La Forgia potenzia chi la controlla.' : ''} La caduta della ${citadelName().toLowerCase()} conclude l’assedio.` : level.kind === 'outpost' ? 'Sviluppa la base e conquista l’avamposto centrale per ottenere oro e reclutare maghi.' : 'Conquista gli avamposti per oro e depositi. Ne basta uno per reclutare maghi. Rossi e Viola sono rivali: elimina entrambe le fortezze.';
+      description.textContent = isSiege() ? `Conquista le torri per indebolire lo scudo. Distruggi gli accampamenti per fermare i rinforzi.${state.outposts.some(p => p.role === 'forge') ? ' La Forgia potenzia chi la controlla.' : ''}${buildable().includes('depot') ? ' Costruisci magazzini (M) vicino ai giacimenti lontani.' : ''} La caduta della ${citadelName().toLowerCase()} conclude l’assedio.` : level.kind === 'outpost' ? 'Sviluppa la base e conquista l’avamposto centrale per ottenere oro e reclutare maghi.' : 'Conquista gli avamposti per oro e depositi. Ne basta uno per reclutare maghi. Rossi e Viola sono rivali: elimina entrambe le fortezze.';
       hint.textContent = 'Clic: seleziona · doppio clic: stesso tipo · clic destro: ordina · G: esercito · I: inattivo · Ctrl+1…5: gruppi';
     } else if (first.type === 'outpost' && sel.length === 1) {
       title.textContent = post.name;
@@ -211,7 +223,7 @@
       const workers = sel.filter(e => e.type === 'worker' && e.team === 'player');
       const fighters = sel.filter(e => isUnit(e) && e.type !== 'worker' && e.team === 'player');
       badges = `<span class="stat-pill">⚒ ${workers.length} contadini</span><span class="stat-pill">⚔ ${fighters.length} combattenti</span>`;
-      if (workers.length) cmd += commandButton('build', 'Costruisci caserma', '110 legno · 45 oro · B', '⌂', !canPay(COST.barracks));
+      if (workers.length) cmd += buildButtons();
       hint.textContent = 'Muovi permette la ritirata. Avanza ingaggia i nemici lungo il percorso.';
     } else {
       const u = first, friendly = u.team === 'player';
@@ -224,20 +236,24 @@
           archer: 'Tiro a distanza: efficace dietro la fanteria, vulnerabile in mischia. Danni ridotti agli edifici.',
           mage: 'Esplosione arcana ogni 3s: 30 danni al bersaglio e 18 ai nemici vicini. Fragile, debole contro gli edifici.',
           raider: 'Predone da mischia. Minaccia lavoratori, avamposto e castello.',
-          ram: 'Ariete d’assedio: ignora le unità e sfonda gli edifici. Corazzato: frecce di arcieri, castello e torri fanno metà danni. Fermalo con armigeri e maghi.'
+          ram: 'Ariete d’assedio: ignora le unità e sfonda gli edifici. Corazzato: frecce di arcieri, castello e torri fanno metà danni. Fermalo con armigeri e maghi.',
+          knight: 'Cavaliere: velocissimo, razzia contadini e magazzini lontani dal castello. Tieni qualche armigero o arciere vicino ai raccoglitori.',
+          champion: 'Campione della Guardia reale: lento ma fortissimo in mischia. Circondalo e colpiscilo da lontano.'
         };
         description.textContent = descriptions[u.type];
         if (u.carry) badges += `<span class="stat-pill">Trasporta ${u.carry} ${u.carryType === 'wood' ? 'legno' : 'oro'}</span>`;
         if (u.type !== 'worker') badges += `<span class="stat-pill">⚔ ${u.damage} · portata ${u.range}</span>`;
         if (forgeMultiplier(u.team) > 1) badges += `<span class="stat-pill">Forgia +${Math.round((forgeMultiplier(u.team) - 1) * 100)}% danni</span>`;
-        if (friendly && u.type === 'worker') cmd += commandButton('build', 'Costruisci caserma', '110 legno · 45 oro · B', '⌂', !canPay(COST.barracks));
+        if (friendly && u.type === 'worker') cmd += buildButtons();
         hint.textContent = u.order?.type === 'hold' ? 'Mantiene la posizione: attacca solo a portata, senza inseguire.' : friendly ? 'Clic destro: ordine contestuale · F: avanza · X: mantieni · vicino al castello si cura' : 'Unità nemica: clic destro con le tue truppe per attaccarla.';
       } else {
-        description.textContent = u.type === 'camp' ? 'Accampamento di rinforzi. Distruggilo per eliminare le sue ondate: i suoi turni resteranno vuoti.' : isSiege() && u.type === 'keep' && isEnemy(u.team) ? `${citadelName()}: scudo ${Math.round(citadelShield()*100)}%. Ogni torre nemica riduce i danni del ${shieldPct()}%; neutralizzala o conquistala per indebolire la protezione.` : u.type === 'keep'
+        description.textContent = u.type === 'camp' ? (level.enemies[u.frontIndex]?.troops === 'knight' ? 'Scuderie: inviano cavalieri contro contadini e magazzini. Distruggile per fermare le razzie.' : 'Accampamento di rinforzi. Distruggilo per eliminare le sue ondate: i suoi turni resteranno vuoti.')
+          : u.type === 'bastion' ? `Bastione: frecce da ${RULES.defenses.bastion.enemyDamage} danni ogni ${String(RULES.defenses.bastion.cooldown).replace('.', ',')}s, portata ${RULES.defenses.bastion.range}. Non serve abbatterlo per vincere, ma protegge la cittadella.`
+          : u.type === 'depot' ? 'Magazzino: i contadini vi depositano legno e oro. Costruiscilo vicino ai giacimenti lontani; i cavalieri nemici lo prendono di mira.' : isSiege() && u.type === 'keep' && isEnemy(u.team) ? `${citadelName()}: scudo ${Math.round(citadelShield()*100)}%. Ogni torre nemica riduce i danni del ${shieldPct()}%; neutralizzala o conquistala per indebolire la protezione.` : u.type === 'keep'
           ? (friendly ? 'Il castello difende la zona con frecce automatiche, recluta contadini e cura le unità vicine fuori combattimento. Raduno su un bosco o una miniera: i nuovi contadini raccolgono subito.' : 'Il castello difende la zona con frecce automatiche e recluta contadini.')
           : 'Recluta armigeri, arcieri e maghi. Ogni edificio può accodare fino a 5 unità.';
-        if (u.type === 'barracks' && u.progress < 1) badges += `<span class="stat-pill">Costruzione: ${Math.floor(u.progress * 100)}%</span>`;
-        if (friendly) {
+        if (u.progress < 1) badges += `<span class="stat-pill">Costruzione: ${Math.floor(u.progress * 100)}%</span>`;
+        if (friendly && (u.type === 'keep' || u.type === 'barracks')) {
           const types = u.type === 'keep' ? ['worker'] : ['soldier', 'archer', 'mage'];
           for (const type of types) {
             const c = COST[type], shortcut = { worker: 'R', soldier: 'R', archer: 'Q', mage: 'E' }[type];
@@ -254,7 +270,7 @@
           }
           cmd += commandButton('rally', 'Punto di raduno', u.rally ? 'Impostato · tocca per cambiarlo' : 'Scegli la meta delle nuove unità', '⚑');
         }
-        hint.textContent = friendly ? 'Clic destro sul terreno: raduno. Il + in popolazione indica i posti prenotati.' : 'La fortezza è difesa: prepara un esercito prima dell’assalto.';
+        hint.textContent = u.type === 'depot' && friendly ? 'Clic destro con i contadini carichi per depositare qui.' : friendly ? 'Clic destro sul terreno: raduno. Il + in popolazione indica i posti prenotati.' : 'La fortezza è difesa: prepara un esercito prima dell’assalto.';
       }
     }
     if (sel.some(u => u.team === 'player' && isUnit(u))) {
@@ -271,34 +287,38 @@
       oldButtons.forEach((b, i) => { b.disabled = newButtons[i].disabled; b.innerHTML = newButtons[i].innerHTML; });
     } else actions.innerHTML = cmd;
   }
-  function beginBuild() {
-    if (!state.running || state.ended) return;
+  function beginBuild(type = 'barracks') {
+    if (!state.running || state.ended || !buildable().includes(type)) return;
     if (!selectedAlive().some(s => s.type === 'worker' && s.team === 'player')) { toast('Seleziona prima un contadino.'); return; }
-    if (!canPay(COST.barracks)) { toast('Servono 110 legno e 45 oro per la caserma.'); return; }
-    state.mode = 'place-barracks'; $('placementNotice').classList.remove('hidden');
+    if (!canPay(COST[type])) { toast(`Servono ${priceText(COST[type]).replace(' · ', ' e ')} per ${BUILD_TEXT[type].the}.`); return; }
+    state.mode = 'place'; state.placing = type; $('placementNotice').classList.remove('hidden');
     $('cancelOrderBtn').classList.remove('hidden');
-    $('placementNotice').textContent = '⌂ Scegli dove costruire la caserma · ESC annulla';
-    toast('Scegli un luogo libero vicino al tuo castello.');
+    $('placementNotice').textContent = `${BUILD_TEXT[type].icon} Scegli dove costruire ${BUILD_TEXT[type].the} · ESC annulla`;
+    toast(level.forwardBuild ? 'Scegli un luogo libero vicino al castello o a una torre alleata.' : 'Scegli un luogo libero vicino al tuo castello.');
   }
-  function placeBarracks(x, y) {
+  function placeBuilding(x, y) {
+    const type = state.placing || 'barracks';
     const builder = selectedAlive().find(u => u.type === 'worker' && u.team === 'player');
     if (!builder) { toast('Il contadino non è più disponibile.'); cancelBuild(); return; }
-    if (!validBuild(x, y)) { toast('Posizione non valida: costruisci vicino al castello e lontano dagli ostacoli.'); return; }
-    if (!spend(COST.barracks)) { toast('Risorse insufficienti.'); cancelBuild(); return; }
-    const b = createBuilding('barracks', 'player', x, y, 0);
+    if (!validBuild(x, y, type)) { toast(level.forwardBuild ? 'Posizione non valida: costruisci vicino al castello o a una torre alleata, lontano dagli ostacoli.' : 'Posizione non valida: costruisci vicino al castello e lontano dagli ostacoli.'); return; }
+    if (!spend(COST[type])) { toast('Risorse insufficienti.'); cancelBuild(); return; }
+    const b = createBuilding(type, 'player', x, y, 0);
     builder.order = { type: 'build', targetId: b.id };
     cancelBuild(); select(b);
-    toast('Il contadino sta costruendo la caserma.');
+    toast(`Il contadino sta costruendo ${BUILD_TEXT[type].the}.`);
   }
   function cancelBuild() {
-    state.mode = 'select'; $('placementNotice').classList.add('hidden');
+    state.mode = 'select'; state.placing = null; $('placementNotice').classList.add('hidden');
     $('cancelOrderBtn').classList.add('hidden');
   }
-  function validBuild(x, y) {
-    const home = keep('player');
-    if (x < 80 || y < 105 || x > W - 80 || y > H - 95 || dist(pos(x,y),home) > 635) return false;
-    return state.outposts.every(p => dist(p, { x, y }) > 150) && !state.buildings.some(b => alive(b) && dist(b, {x,y}) < (b.type === 'keep' ? 145 : 105)) &&
-      !state.nodes.some(n => n.stock > 0 && dist(n, {x,y}) < n.r + 65);
+  // Forward bases: some levels also allow building around allied, uncontested posts.
+  const forwardPosts = () => level.forwardBuild ? state.outposts.filter(p => p.owner === 'player' && !p.contested) : [];
+  function validBuild(x, y, type = 'barracks') {
+    const home = keep('player'), at = { x, y };
+    if (!buildable().includes(type) || x < 80 || y < 105 || x > W - 80 || y > H - 95) return false;
+    if (!(alive(home) && dist(at, home) <= 635) && !forwardPosts().some(p => dist(p, at) <= 380)) return false;
+    return state.outposts.every(p => dist(p, at) > 150) && !state.buildings.some(b => alive(b) && dist(b, at) < (b.type === 'keep' ? 145 : 105)) &&
+      !state.nodes.some(n => n.stock > 0 && dist(n, at) < n.r + 65);
   }
   function recruit(type) {
     if (!state.running || state.ended || !COST[type] || !RULES.units[type]) return;
@@ -358,7 +378,8 @@
   }
   function dispatchCommand(command) {
     if (!state.running || state.ended) return;
-    if (command === 'build') beginBuild();
+    if (command === 'build') beginBuild('barracks');
+    else if (command.startsWith('build-')) beginBuild(command.slice(6));
     else if (command.startsWith('recruit-')) recruit(command.slice(8));
     else if (command === 'cancel-training') cancelTraining();
     else if (command === 'move' || command === 'attack-move') setOrderMode(command);
@@ -406,7 +427,7 @@
   }
   function orderUnits(x, y, mode = 'context') {
     const selected = selectedAlive();
-    const building = selected.length === 1 && selected[0].team === 'player' && selected[0].queue ? selected[0] : null;
+    const building = selected.length === 1 && selected[0].team === 'player' && ['keep', 'barracks'].includes(selected[0].type) ? selected[0] : null;
     if (building) {
       const node = building.type === 'keep' ? pick(x, y) : null;
       if (node?.stock > 0) {
@@ -429,11 +450,11 @@
       army.forEach(u => { u.order = { type: 'attack', targetId: target.id }; });
       toast('Bersaglio prioritario assegnato!'); return;
     }
-    if (target?.type === 'barracks' && target.team === 'player' && target.progress < 1) {
+    if (target && target.team === 'player' && !isUnit(target) && target.progress < 1) {
       army.filter(u => u.type === 'worker').forEach(u => { u.order = { type: 'build', targetId: target.id }; });
       toast('Contadini inviati a costruire.'); return;
     }
-    if ((target?.type === 'keep' && target.team === 'player') || (target?.type === 'outpost' && usableDepot(target))) {
+    if ((target?.team === 'player' && (target.type === 'keep' || (target.type === 'depot' && target.progress >= 1))) || (target?.type === 'outpost' && usableDepot(target))) {
       const carriers = army.filter(u => u.type === 'worker' && u.carry);
       carriers.forEach(u => { u.order = { type: 'deposit' }; });
       if (carriers.length === army.length) return;
@@ -462,7 +483,7 @@
   }
   function getNode(id) { return state.nodes.find(n => n.id === id && n.stock > 0); }
   function targetRange(u, victim) {
-    return u.range + (victim.type === 'keep' ? 45 : victim.type === 'barracks' ? 37 : 4);
+    return u.range + (victim.type === 'keep' ? 45 : victim.type === 'barracks' || victim.type === 'bastion' ? 37 : victim.type === 'depot' ? 30 : 4);
   }
   function findThreat(u, stationary = false) {
     let best = null, nearest = stationary ? Infinity : Math.max(145, u.range + 35);
@@ -479,10 +500,19 @@
     if (level.shieldPerTower && victim.type === 'keep' && isEnemy(victim.team)) amount *= 1 - citadelShield();
     victim.hp = Math.max(0, victim.hp - amount); victim.lastHit = state.time;
     if (victim.team === 'player' && isEnemy(attackerTeam) && (!isUnit(victim) || victim.type === 'worker')) raiseAlert(victim);
+    // The citadel's last stand: the royal guard sorties once, the first time it falls below the threshold.
+    const stand = level.lastStand;
+    if (stand && !state.lastStandDone && alive(victim) && victim.type === 'keep' && isEnemy(victim.team) && victim.hp <= victim.maxHp * stand.at) {
+      state.lastStandDone = true;
+      for (const [type, dx, dy] of stand.guards) createUnit(type, victim.team, victim.x + dx, victim.y + dy, { type: 'guard', x: victim.x + dx, y: victim.y + dy });
+      state.pings.push({ x: victim.x, y: victim.y, life: 3, full: 3 });
+      toast(`${citadelName()}: esce la Guardia reale, guidata dal Campione!`);
+    }
     if (!alive(victim)) {
       burst(victim.x, victim.y, '#f9c17a', 18, .9);
       if (attackerTeam === 'player' && isEnemy(victim.team) && isUnit(victim)) state.stats.killed++;
       if (victim.type === 'camp') toast(`${victim.frontName} distrutto: rinforzi interrotti da questo campo!`);
+      if (victim.type === 'bastion') toast('Bastione abbattuto: la via della cittadella è più libera!');
       if (victim.queue) victim.queue = []; // Destruction releases reserved population.
       if (victim.type === 'keep') {
         if (victim.team === 'player') finish(false);
@@ -520,13 +550,13 @@
     return state.nodes.filter(n => n.stock > 0 && n.type === type).sort((a, b) => dist(u, a) - dist(u, b))[0];
   }
   function nearestDepot(u) {
-    const destinations = state.buildings.filter(b => b.type === 'keep' && b.team === 'player' && alive(b));
+    const destinations = state.buildings.filter(b => b.team === 'player' && alive(b) && (b.type === 'keep' || (b.type === 'depot' && b.progress >= 1)));
     destinations.push(...state.outposts.filter(usableDepot));
     return destinations.sort((a, b) => dist(u, a) - dist(u, b))[0];
   }
   function depositCargo(u, dt) {
     const home = nearestDepot(u);
-    if (!home || !moveTo(u, home, home.type === 'keep' ? 79 : 52, dt)) return false;
+    if (!home || !moveTo(u, home, home.type === 'keep' ? 79 : home.type === 'depot' ? 50 : 52, dt)) return false;
     if (u.carry) {
       state[u.carryType] += u.carry; state.stats.gathered += u.carry;
       floating(u.x, u.y - 25, `+${u.carry}`, '#e2d08d');
@@ -561,12 +591,12 @@
       if (!u.carry || depositCargo(u, dt)) u.order = null;
     } else if (job.type === 'build') {
       const b = getEntity(job.targetId);
-      if (!b || b.type !== 'barracks' || b.progress >= 1) { u.order = null; return; }
-      if (moveTo(u, b, 62, dt)) {
-        const gain = Math.min(1 - b.progress, dt / 12);
+      if (!b || b.team !== 'player' || isUnit(b) || b.progress >= 1) { u.order = null; return; }
+      if (moveTo(u, b, b.type === 'depot' ? 52 : 62, dt)) {
+        const gain = Math.min(1 - b.progress, dt / (RULES.buildings[b.type]?.buildTime ?? 12));
         b.progress = Math.min(1, b.progress + gain); b.hp = Math.min(b.maxHp, b.hp + b.maxHp * gain);
         u.swing = .15;
-        if (b.progress >= 1) { u.order = null; toast('Caserma completata! Recluta armigeri e arcieri.'); }
+        if (b.progress >= 1) { u.order = null; toast(b.type === 'depot' ? 'Magazzino completato: i contadini vicini depositano qui.' : 'Caserma completata! Recluta armigeri e arcieri.'); }
       }
     } else if (job.type === 'attack') {
       const target = getEntity(job.targetId);
@@ -585,9 +615,22 @@
       .sort((a, b) => dist(u, a) - dist(u, b))[0];
     if (target) performAttack(u, target, dt);
   }
+  // Knights on a raid hunt workers and depots; they only fight soldiers that block them.
+  function harassTarget(u) {
+    return state.units.filter(v => alive(v) && v.team === 'player' && v.type === 'worker')
+      .concat(state.buildings.filter(b => alive(b) && b.team === 'player' && b.type === 'depot'))
+      .sort((a, b) => dist(u, a) - dist(u, b))[0];
+  }
   function updateFighter(u, dt) {
     if (u.type === 'ram') { updateRam(u, dt); return; }
     const job = u.order;
+    if (u.type === 'knight' && job?.type === 'raid') {
+      const prey = harassTarget(u);
+      if (prey) {
+        const blocker = state.units.find(v => alive(v) && v.team !== u.team && v.type !== 'worker' && dist(u, v) <= 50);
+        performAttack(u, blocker || prey, dt); return;
+      }
+    }
     // Explicit movement and focus-fire orders take precedence over auto-targeting.
     if (job?.type === 'move') {
       if (moveTo(u, job, 5, dt)) u.order = null;
@@ -639,7 +682,7 @@
   }
   function updateOutpost(dt) {
     for (const p of state.outposts) {
-      const teams = [...new Set(state.units.filter(u => alive(u) && u.type !== 'worker' && u.type !== 'ram' && dist(u, p) <= p.radius).map(u => u.team))];
+      const teams = [...new Set(state.units.filter(u => alive(u) && u.type !== 'worker' && u.type !== 'ram' && u.type !== 'knight' && dist(u, p) <= p.radius).map(u => u.team))];
       p.contested = teams.length > 1;
       const oldOwner = p.owner;
       if (teams.length === 1) {
@@ -681,13 +724,14 @@
   }
   function updateDefenses(dt) {
     for (const b of state.buildings) {
-      if (!alive(b) || b.type !== 'keep') continue;
+      const d = RULES.defenses[b.type];
+      if (!alive(b) || !d) continue;
       b.cooldown = Math.max(0, b.cooldown - dt);
       if (b.cooldown > 0) continue;
-      const enemies = state.units.filter(u => alive(u) && u.team !== b.team && dist(u, b) <= 235);
+      const enemies = state.units.filter(u => alive(u) && u.team !== b.team && dist(u, b) <= d.range);
       enemies.sort((a, c) => dist(a, b) - dist(c, b));
       if (!enemies.length) continue;
-      b.cooldown = 1.5; damage(enemies[0], (isEnemy(b.team) ? 14 : 10) * arrowFactor(enemies[0]), b.team); attackEffect(b, enemies[0], 'arrow');
+      b.cooldown = d.cooldown; damage(enemies[0], (isEnemy(b.team) ? d.enemyDamage : d.damage) * arrowFactor(enemies[0]), b.team); attackEffect(b, enemies[0], 'arrow');
     }
   }
   function planWave() {
@@ -705,10 +749,10 @@
     // A defeated front leaves its scheduled slot (or its half of a pincer) empty.
     let total = 0;
     for (const front of live) {
-      const home = frontHome(front), cap = front.type === 'camp' ? 5 : level.waveCap;
+      const home = frontHome(front), cap = front.cap ?? (front.type === 'camp' ? 5 : level.waveCap);
       const troops = Math.min(cap, 1 + state.wave), postId = plan.counter ? plan.postId : state.outposts[front.post].id;
       for (let i = 0; i < troops; i++) {
-        const type = !front.type && level.ramFrom && state.wave >= level.ramFrom && i === 0 ? 'ram'
+        const type = front.troops ? front.troops : !front.type && level.ramFrom && state.wave >= level.ramFrom && i === 0 ? 'ram'
           : state.wave >= 6 && front.type !== 'camp' && i === troops - 1 ? 'mage' : state.wave >= 3 && i % 3 === 2 ? 'archer' : 'raider';
         createUnit(type, front.team, home.x - 110 - (i % 3) * 25, home.y + (i - (troops - 1) / 2) * 34,
           { type: 'raid', targetId: keep('player').id, viaOutpost: plan.viaOutpost, postId, sourceId: home.id });
@@ -719,7 +763,7 @@
     else if (live.length > 1) toast(`Tenaglia! Ondata ${state.wave}: ${total} nemici da ${live.map(f => f.name).join(' e ')}!`);
     else {
       const target = plan.counter ? state.outposts.find(p => p.id === plan.postId) : state.outposts[live[0].post];
-      const rams = !live[0].type && level.ramFrom && state.wave >= level.ramFrom ? ' Attenzione: un ariete punta ai tuoi edifici!' : '';
+      const rams = live[0].troops === 'knight' ? ' Cavalieri in arrivo: proteggi contadini e magazzini!' : !live[0].type && level.ramFrom && state.wave >= level.ramFrom ? ' Attenzione: un ariete punta ai tuoi edifici!' : '';
       toast(plan.counter ? `Contrattacco della ${citadelName().toLowerCase()}: ${total} nemici verso ${target.name}!${rams}` : `Ondata ${state.wave}: ${total} nemici da ${live[0].name}, verso ${plan.viaOutpost ? target.name : 'il castello'}!${rams}`);
     }
     state.wave++; state.waveIn = Math.max(level.minWaveInterval ?? 38, 65 - state.wave * 2);
@@ -857,7 +901,8 @@
     }
   }
   function drawTree(node, tick) {
-    const {x,y} = node; const scale = node.stock <= 0 ? .45 : 1;
+    const {x,y} = node; const scale = (node.stock <= 0 ? .45 : 1) * (node.rich ? 1.2 : 1);
+    if(node.rich)ellipse(x,y+10,66,40,'#f3df8e2e');
     ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);
     ellipse(0,22,55,20,'#263e2b71');
     for (let i=0;i<5;i++) {
@@ -873,6 +918,9 @@
   }
   function drawGold(node) {
     const {x,y}=node;
+    ctx.save();
+    // Rich veins are larger and glow.
+    if(node.rich){ellipse(x,y+12,58,34,'#ffe7914a');ctx.translate(x,y);ctx.scale(1.2,1.2);ctx.translate(-x,-y);}
     ellipse(x,y+18,37,16,'#2f433688');
     const stones=[[-25,7,19,17],[-4,0,25,24],[21,9,17,16],[2,17,19,14]];
     for(const [ox,oy,rx,ry] of stones){
@@ -881,7 +929,8 @@
       ctx.beginPath();ctx.moveTo(x+ox-rx*.7,y+oy-ry*.6);ctx.lineTo(x+ox+rx*.1,y+oy-ry);ctx.lineTo(x+ox+2,y+oy+ry*.1);ctx.closePath();ctx.fillStyle='#cdb568';ctx.fill();
       ctx.beginPath();ctx.moveTo(x+ox+2,y+oy+ry*.1);ctx.lineTo(x+ox+rx,y+oy-ry*.3);ctx.lineTo(x+ox+rx*.6,y+oy+ry*.7);ctx.closePath();ctx.fillStyle='#e2c979';ctx.fill();
     }
-    ellipse(x,y+29,18,9,'#544e368a');ctx.font='bold 13px system-ui';ctx.textAlign='center';ctx.fillStyle='#ffe5a1';ctx.fillText('◆',x,y+33);
+    ellipse(x,y+29,18,9,'#544e368a');ctx.font='bold 13px system-ui';ctx.textAlign='center';ctx.fillStyle='#ffe5a1';ctx.fillText(node.rich?'◆◆':'◆',x,y+33);
+    ctx.restore();
   }
   function drawKeep(b) {
     const enemy=isEnemy(b.team), x=b.x,y=b.y;
@@ -926,6 +975,32 @@
     }
     ctx.restore();
   }
+  function drawDepot(b) {
+    ctx.save();ctx.translate(b.x,b.y);
+    ellipse(2,24,50,18,'#20382b8a');
+    roundedRect(-38,-12,76,42,3,'#8a6a46');
+    for(let i=-34;i<36;i+=9)roundedRect(i,-10,2,38,1,'#6f5236');
+    ctx.beginPath();ctx.moveTo(-46,-10);ctx.lineTo(0,-40);ctx.lineTo(46,-10);ctx.closePath();ctx.fillStyle='#5e6b4c';ctx.fill();
+    ctx.beginPath();ctx.moveTo(-46,-10);ctx.lineTo(0,-40);ctx.lineTo(0,-10);ctx.closePath();ctx.fillStyle='#788660';ctx.fill();
+    roundedRect(-14,4,28,26,2,'#3f3226');
+    // Crates and a sack by the door.
+    roundedRect(24,12,18,16,2,'#b48c5a');ctx.strokeStyle='#7c5c37';ctx.lineWidth=1.5;ctx.strokeRect(24,12,18,16);
+    roundedRect(-44,14,16,14,2,'#b48c5a');ellipse(-48,26,7,6,'#d8c08a');
+    if(b.progress<1){ctx.strokeStyle='#edc787';ctx.lineWidth=3;ctx.strokeRect(-48,-42,96,76);ctx.beginPath();ctx.moveTo(-48,-42);ctx.lineTo(48,34);ctx.moveTo(48,-42);ctx.lineTo(-48,34);ctx.stroke();}
+    ctx.restore();
+  }
+  function drawBastion(b) {
+    ctx.save();ctx.translate(b.x,b.y);
+    ellipse(3,34,52,20,'#152d2488');
+    roundedRect(-34,-58,68,92,8,'#8f8873');
+    roundedRect(-28,-64,56,92,6,'#bcb49a');
+    for(let i=-28;i<=20;i+=12)roundedRect(i,-74,9,13,2,'#d3c8a8');
+    for(const sy of [-38,-8])roundedRect(-3,sy,6,14,2,'#4e5048');
+    roundedRect(-12,6,24,28,10,'#3b3a33');
+    ctx.strokeStyle='#524d42';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(18,-72);ctx.lineTo(18,-108);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(19,-106);ctx.lineTo(48,-98);ctx.lineTo(19,-89);ctx.closePath();ctx.fillStyle='#c4674b';ctx.fill();
+    ctx.restore();
+  }
   function drawHealth(entity, x,y,width=36) {
     if(entity.hp >= entity.maxHp && entity.progress === undefined) return;
     if(entity.hp>=entity.maxHp && entity.progress===1) return;
@@ -942,7 +1017,7 @@
       ctx.strokeStyle = '#b9a2ed';ctx.lineWidth = 3;ctx.setLineDash([10,6]);
       ctx.beginPath();ctx.ellipse(b.x,b.y-25,105,120,0,0,TWO_PI);ctx.stroke();ctx.setLineDash([]);
     }
-    if(b.type==='keep')drawKeep(b);else drawBarracks(b);
+    if(b.type==='keep')drawKeep(b);else if(b.type==='bastion')drawBastion(b);else if(b.type==='depot')drawDepot(b);else drawBarracks(b);
     if (b.frontName) {
       ctx.font='bold 11px system-ui';ctx.fillStyle='#f4d5ac';ctx.textAlign='center';
       ctx.fillText(b.frontName.toUpperCase(),b.x,b.y+66);
@@ -951,7 +1026,7 @@
       ctx.strokeStyle='#c4674b';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(b.x+35,b.y-35);ctx.lineTo(b.x+35,b.y-95);ctx.stroke();
       ctx.fillStyle='#c4674b';ctx.fillRect(b.x+35,b.y-95,28,17);
     }
-    if(b.hp<b.maxHp || b.progress<1) drawHealth(b,b.x,b.y-(b.type==='keep'?138:75),b.type==='keep'?88:70);
+    if(b.hp<b.maxHp || b.progress<1) drawHealth(b,b.x,b.y-({keep:138,bastion:118,depot:56}[b.type]??75),b.type==='keep'?88:70);
   }
   function drawRam(u) {
     ctx.save();ctx.translate(u.x,u.y);
@@ -969,9 +1044,29 @@
     ctx.restore();
     if(u.hp<u.maxHp)drawHealth(u,u.x,u.y-44,42);
   }
+  function drawKnight(u) {
+    ctx.save();ctx.translate(u.x,u.y);
+    if(state.selected.includes(u)){ctx.strokeStyle='#f8e4a5';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(0,6,26,11,0,0,TWO_PI);ctx.stroke();}
+    ellipse(2,9,24,7,'#1a342670');
+    ctx.scale(u.facing,1);
+    const gallop=Math.sin(state.time*16+u.id)*3;
+    ctx.strokeStyle='#4b3424';ctx.lineWidth=4;ctx.beginPath();
+    for(const lx of [-13,-6,8,15]){ctx.moveTo(lx,0);ctx.lineTo(lx+(lx%2?gallop:-gallop),11);}ctx.stroke();
+    ellipse(0,-4,19,9,'#7a5236');
+    ctx.beginPath();ctx.moveTo(13,-8);ctx.lineTo(22,-22);ctx.lineTo(29,-19);ctx.lineTo(20,-4);ctx.closePath();ctx.fillStyle='#7a5236';ctx.fill();
+    ctx.strokeStyle='#2f2219';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(-18,-6);ctx.lineTo(-25,4);ctx.stroke();
+    roundedRect(-12,-10,18,7,2,'#c76a52');
+    roundedRect(-7,-26,12,17,3,'#953f39');
+    ctx.beginPath();ctx.arc(-1,-31,6.5,0,TWO_PI);ctx.fillStyle='#82706c';ctx.fill();
+    ctx.strokeStyle='#cdd0cd';ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(-4,-14);ctx.lineTo(30+(u.swing?6:0),-24);ctx.stroke();
+    ctx.restore();
+    if(u.hp<u.maxHp)drawHealth(u,u.x,u.y-44,34);
+  }
   function drawUnit(u) {
     if (u.type === 'ram') { drawRam(u); return; }
+    if (u.type === 'knight') { drawKnight(u); return; }
     ctx.save();ctx.translate(u.x,u.y);
+    if(u.type==='champion')ctx.scale(1.4,1.4);
     const isWorker=u.type==='worker',enemy=isEnemy(u.team);
     if(state.selected.includes(u)){
       ellipse(0,2,19,10,'#d5cb735c');
@@ -1011,9 +1106,13 @@
       ctx.beginPath();ctx.ellipse(-12,-4,7,10,-.20,0,TWO_PI);ctx.fillStyle=u.team==='enemy2'?'#b381cb':enemy?'#b66d49':'#d4be7b';ctx.fill();
       ctx.beginPath();ctx.ellipse(-12,-4,4,7,-.20,0,TWO_PI);ctx.fillStyle=enemy?'#6a3b35':'#476a63';ctx.fill();
       ctx.strokeStyle='#cdd0cd';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(12,-5);ctx.lineTo(16,-25-(u.swing?8:0));ctx.stroke();
+      if(u.type==='champion'){
+        ctx.beginPath();ctx.moveTo(-8,-29);ctx.lineTo(-8,-37);ctx.lineTo(-4,-32);ctx.lineTo(0,-39);ctx.lineTo(4,-32);ctx.lineTo(8,-37);ctx.lineTo(8,-29);ctx.closePath();
+        ctx.fillStyle='#e9c35f';ctx.fill();ctx.strokeStyle='#8d6e3c';ctx.lineWidth=1;ctx.stroke();
+      }
     }
     ctx.restore();
-    if(u.hp<u.maxHp)drawHealth(u,u.x,u.y-36,32);
+    if(u.hp<u.maxHp)drawHealth(u,u.x,u.y-(u.type==='champion'?54:36),u.type==='champion'?44:32);
   }
   function drawParticles() {
     for(const p of state.particles) {
@@ -1077,10 +1176,15 @@
     }
   }
   function drawBuildGhost() {
-    if(state.mode!=='place-barracks'||!state.mouse)return;
-    const x=state.mouse.x+state.camera.x,y=state.mouse.y+state.camera.y;
-    const ok=validBuild(x,y);
-    ctx.save();ctx.globalAlpha=.68;drawBarracks({x,y,progress:1});ctx.globalAlpha=1;
+    if(state.mode!=='place'||!state.mouse)return;
+    const x=state.mouse.x+state.camera.x,y=state.mouse.y+state.camera.y,type=state.placing;
+    const ok=validBuild(x,y,type);
+    // Show where building is allowed: the castle's area and, if enabled, allied posts.
+    ctx.save();ctx.setLineDash([6,10]);ctx.strokeStyle='#cde3b166';ctx.lineWidth=2;
+    const home=keep('player');if(alive(home)){ctx.beginPath();ctx.arc(home.x,home.y,635,0,TWO_PI);ctx.stroke();}
+    for(const p of forwardPosts()){ctx.beginPath();ctx.arc(p.x,p.y,380,0,TWO_PI);ctx.stroke();}
+    ctx.restore();
+    ctx.save();ctx.globalAlpha=.68;(type==='depot'?drawDepot:drawBarracks)({x,y,progress:1});ctx.globalAlpha=1;
     ctx.strokeStyle=ok?'#cde3b1':'#ef7d75';ctx.lineWidth=3;ctx.setLineDash([8,5]);
     ctx.strokeRect(x-57,y-55,114,110);ctx.restore();
   }
@@ -1098,8 +1202,8 @@
     mctx.stroke();
     for(const n of state.nodes) {
       if(n.stock<=0)continue;
-      mctx.fillStyle=n.type==='wood'?'#7cad72':'#dab869';
-      mctx.beginPath();mctx.arc(n.x*sx,n.y*sy,n.type==='wood'?4:3,0,TWO_PI);mctx.fill();
+      mctx.fillStyle=n.type==='wood'?(n.rich?'#a6dc8c':'#7cad72'):(n.rich?'#ffe08a':'#dab869');
+      mctx.beginPath();mctx.arc(n.x*sx,n.y*sy,(n.type==='wood'?4:3)+(n.rich?2:0),0,TWO_PI);mctx.fill();
     }
     for(const b of state.buildings) {
       if(!alive(b))continue;
@@ -1161,7 +1265,7 @@
     state.running=true;state.ended=false;
     $('modal').classList.add('hidden');
     canvas.focus({preventScroll:true});
-    toast(state.time > 0 ? 'Partita ripresa.' : isSiege() ? `Le ${countWord(state.outposts.length)} torri proteggono la ${citadelName().toLowerCase()}. Conquista il Mercato per sostenere l’assedio.` : 'Raccogli risorse, prepara l’esercito e conquista l’avamposto.');
+    toast(state.time > 0 ? 'Partita ripresa.' : isSiege() ? `Le ${countWord(level.posts.filter(p => p.initialOwner).length)} torri proteggono la ${citadelName().toLowerCase()}. Conquista il Mercato per sostenere l’assedio.` : 'Raccogli risorse, prepara l’esercito e conquista l’avamposto.');
   }
   function openHelp() {
     state.running=false;state.keys.clear();
@@ -1227,7 +1331,7 @@
         orderUnits(world.x,world.y,mode);cancelBuild();return;
       }
       if(v.button!==0)return;
-      if(state.mode==='place-barracks'){placeBarracks(world.x,world.y);return;}
+      if(state.mode==='place'){placeBuilding(world.x,world.y);return;}
       if(['move','attack-move','rally'].includes(state.mode)){
         orderUnits(world.x,world.y,state.mode);cancelBuild();return;
       }
@@ -1241,8 +1345,8 @@
         const thing=pick(world.x,world.y);
         if(selectedAlive().some(u=>u.team==='player'&&isUnit(u)) &&
           (!thing || thing.stock!==undefined || isEnemy(thing.team) || thing.type==='outpost' ||
-            (thing.type==='barracks' && thing.progress<1) ||
-            (thing.type==='keep' && state.selected.some(u=>u.type==='worker'&&u.carry)))) {
+            (thing.team==='player' && thing.progress<1) ||
+            (['keep','depot'].includes(thing.type) && thing.team==='player' && state.selected.some(u=>u.type==='worker'&&u.carry)))) {
           orderUnits(world.x,world.y);return;
         }
       }
@@ -1265,7 +1369,7 @@
       if(e.key==='Escape'){cancelBuild();return;}
       if(key==='h'){if(state.running)openHelp();return;}
       if(key==='p'&&!e.repeat){if(state.running)openHelp();else if(!state.ended&&state.time>0)startGame();return;}
-      if(!state.running||e.repeat&&['b','r','q','e','f','x','g','i'].includes(key))return;
+      if(!state.running||e.repeat&&['b','m','r','q','e','f','x','g','i'].includes(key))return;
       if(e.key===' '){centerCamera(keep('player').x,keep('player').y);return;}
       const group=/^Digit([1-5])$/.exec(e.code||'')?.[1];
       if(group){
@@ -1273,7 +1377,8 @@
         else if(!e.altKey)recallGroup(group);
         return;
       }
-      if(key==='b'){beginBuild();return;}
+      if(key==='b'){beginBuild('barracks');return;}
+      if(key==='m'){beginBuild('depot');return;}
       if(key==='q'){recruit('archer');return;}
       if(key==='e'){recruit('mage');return;}
       if(key==='f'){setOrderMode('attack-move');return;}

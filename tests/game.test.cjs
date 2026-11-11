@@ -28,7 +28,7 @@ function game(level = 1) {
   const anchor = '  // Expose a tiny read-only diagnostic surface for automated smoke tests.';
   assert.ok(source.includes(anchor), 'test injection anchor exists');
   vm.runInContext(source.replace(anchor,
-    '  globalThis.testGame = {state, createUnit, createBuilding, resetWorld, keep, select, recruit, cancelTraining, reservedPopulation, orderUnits, update, updateWorker, updateFighter, updateOutpost, updateTraining, performAttack, damage, startWave, depositCargo, dispatchCommand, startGame, restart, finish, validBuild, citadelShield, updateTowerDefenses, planWave, frontHome, waveFront, waveFronts, forgeMultiplier, updateRam, saveGroup, recallGroup, selectSameType, nearestDepot, updateDefenses};\n' + anchor), sandbox);
+    '  globalThis.testGame = {state, createUnit, createBuilding, resetWorld, keep, select, recruit, cancelTraining, reservedPopulation, orderUnits, update, updateWorker, updateFighter, updateOutpost, updateTraining, performAttack, damage, startWave, depositCargo, dispatchCommand, startGame, restart, finish, validBuild, citadelShield, updateTowerDefenses, planWave, frontHome, waveFront, waveFronts, forgeMultiplier, updateRam, saveGroup, recallGroup, selectSameType, nearestDepot, updateDefenses, beginBuild, placeBuilding, cancelBuild, updateTowerDefenses};\n' + anchor), sandbox);
   const g = sandbox.testGame; g.resetWorld(level); g.state.running = true; g.elements = elements;
   g.step = (seconds, fn = g.update) => { for (let i = 0; i < Math.ceil(seconds * 60); i++) fn(1 / 60); };
   return g;
@@ -482,12 +482,13 @@ test('level four: four hostile towers, 60% shield, two camps, population 30 and 
   g.damage(g.keep('enemy'), 100, 'player'); assert.ok(Math.abs(g.keep('enemy').hp - 2145) < 1e-8);
 });
 
-test('level three victory leads to level four; level four victory ends the campaign', () => {
+test('level three victory leads to level four, and level four to level five', () => {
   const g = game(3), s = g.state;
   g.damage(g.keep('enemy'), 10000, 'player'); assert.equal(s.nextLevel, true);
   g.startGame(); assert.equal(s.popCap, 30); assert.equal(s.running, true);
-  g.damage(g.keep('enemy'), 10000, 'player'); assert.equal(s.ended, true); assert.equal(s.nextLevel, false);
+  g.damage(g.keep('enemy'), 10000, 'player'); assert.equal(s.ended, true); assert.equal(s.nextLevel, true);
   assert.match(g.elements.get('modalSubtitle').textContent, /fortezza di ferro/);
+  g.startGame(); assert.equal(s.popCap, 36);
 });
 
 test('the forge boosts whoever holds it, pauses when contested and changes hands on capture', () => {
@@ -637,5 +638,171 @@ test('a prepared army within 30 population can win level four after taking the t
   }
   assert.equal(s.units.filter(u => u.team === 'player').length, 30);
   g.step(110); assert.equal(g.keep('enemy').hp, 0); assert.equal(s.ended, true);
-  assert.equal(s.nextLevel, false);
+  assert.equal(s.nextLevel, true);
+});
+
+test('level five: a vast map, five posts with a neutral mill, bastions, three camps and rich deposits', () => {
+  const g = game(5), s = g.state;
+  assert.equal(s.popCap, 36); assert.equal(s.wood, 220); assert.equal(s.gold, 100);
+  assert.equal(s.decorations.length, Math.round(750 * 4200 * 2800 / (2400 * 1600)));
+  assert.equal(s.outposts.length, 5);
+  assert.equal(s.outposts.filter(p => p.owner === 'enemy').length, 4);
+  assert.equal(s.outposts[4].owner, 'neutral'); assert.equal(s.outposts[4].name, 'Mulino');
+  assert.ok(Math.abs(g.citadelShield() - .6) < 1e-8);
+  assert.equal(g.keep('enemy').hp, 2600);
+  const camps = s.buildings.filter(b => b.type === 'camp');
+  assert.equal(camps.length, 3); assert.equal(camps.find(b => b.frontName === 'Scuderie').hp, 700);
+  const bastions = s.buildings.filter(b => b.type === 'bastion');
+  assert.equal(bastions.length, 2); assert.ok(bastions.every(b => b.hp === 900 && b.team === 'enemy'));
+  const rich = s.nodes.filter(n => n.rich);
+  assert.equal(rich.length, 4);
+  assert.equal(rich.map(n => `${n.type}:${n.stock}`).sort().join(), 'gold:900,gold:900,gold:900,wood:1000');
+  assert.equal(s.nodes.filter(n => n.type === 'wood').length, 24); assert.equal(s.nodes.filter(n => n.type === 'gold').length, 12);
+  // Resources never sit on top of buildings or inside capture circles.
+  for (const n of s.nodes) {
+    assert.ok(s.buildings.every(b => Math.hypot(b.x - n.x, b.y - n.y) > 150), `node ${n.x},${n.y} near a building`);
+    assert.ok(s.outposts.every(p => Math.hypot(p.x - n.x, p.y - n.y) > p.radius + n.r), `node ${n.x},${n.y} inside a post`);
+  }
+});
+
+test('level five ends the campaign', () => {
+  const g = game(5), s = g.state;
+  g.damage(g.keep('enemy'), 100000, 'player');
+  assert.equal(s.ended, true); assert.equal(s.nextLevel, false);
+  assert.match(g.elements.get('modalSubtitle').textContent, /usurpatore/);
+});
+
+test('depots are only buildable where the level allows them', () => {
+  for (const level of [1, 2, 3, 4]) {
+    const g = game(level), s = g.state, home = g.keep('player');
+    g.select(s.units.find(u => u.type === 'worker')); g.beginBuild('depot');
+    assert.equal(s.mode, 'select'); assert.equal(g.validBuild(home.x + 250, home.y + 300, 'depot'), false);
+  }
+});
+
+test('a depot costs 80 wood, builds in 8 seconds and then receives cargo', () => {
+  const g = game(5), s = g.state, worker = s.units.find(u => u.type === 'worker');
+  s.units = s.units.filter(u => u.team === 'player'); s.waveIn = 1000;
+  g.select(worker); g.beginBuild('depot');
+  assert.equal(s.mode, 'place'); assert.equal(s.placing, 'depot');
+  g.placeBuilding(800, 1700);
+  const depot = s.buildings.find(b => b.type === 'depot');
+  assert.ok(depot); assert.equal(s.wood, 140); assert.equal(s.gold, 100); assert.equal(depot.progress, 0);
+  assert.equal(s.mode, 'select');
+  const w = worker; w.x = depot.x - 52; w.y = depot.y;
+  g.step(7.5, dt => g.updateWorker(w, dt)); assert.ok(depot.progress < 1);
+  g.step(.6, dt => g.updateWorker(w, dt)); assert.equal(depot.progress, 1); assert.equal(w.order, null);
+  w.carry = 18; w.carryType = 'gold';
+  assert.equal(g.nearestDepot(w), depot);
+  for (let i = 0; i < 600 && w.carry; i++) g.updateWorker(w, 1 / 60);
+  w.order = { type: 'deposit' }; for (let i = 0; i < 600 && w.carry; i++) g.updateWorker(w, 1 / 60);
+  assert.equal(w.carry, 0); assert.equal(s.gold, 118);
+  // An unfinished depot is not a drop-off point.
+  const site = g.createBuilding('depot', 'player', 700, 1100, 0); w.x = site.x; w.y = site.y;
+  assert.notEqual(g.nearestDepot(w), site);
+});
+
+test('forward building is allowed around allied, uncontested towers only', () => {
+  const g = game(5), s = g.state, arcane = s.outposts[1];
+  const spot = { x: arcane.x, y: arcane.y + 300 };
+  assert.equal(g.validBuild(spot.x, spot.y, 'depot'), false);
+  arcane.owner = 'player';
+  assert.equal(g.validBuild(spot.x, spot.y, 'depot'), true);
+  assert.equal(g.validBuild(spot.x, spot.y, 'barracks'), true);
+  assert.equal(g.validBuild(arcane.x, arcane.y + 100, 'depot'), false);
+  arcane.contested = true; assert.equal(g.validBuild(spot.x, spot.y, 'depot'), false);
+  arcane.contested = false;
+  s.wood = s.gold = 1000; g.select(s.units.find(u => u.type === 'worker'));
+  g.beginBuild('barracks'); g.placeBuilding(spot.x, spot.y);
+  assert.ok(s.buildings.some(b => b.type === 'barracks' && b.x === spot.x && b.progress === 0));
+  // Level four keeps the castle-only rule.
+  const g4 = game(4); g4.state.outposts[0].owner = 'player';
+  const m = g4.state.outposts[0];
+  assert.equal(g4.validBuild(m.x, m.y + 300, 'barracks'), false);
+});
+
+test('the stables send only knights, at most four, on their own wave slots', () => {
+  const g = game(5), s = g.state;
+  const names = [1, 2, 3, 4, 5, 6].map(w => { s.wave = w; return g.waveFronts().map(f => f.name).join('+'); });
+  assert.deepEqual([...names], ['Scuderie', 'Campo nord', 'Campo sud', 'Cittadella dell’usurpatore', 'Scuderie', 'Campo nord+Campo sud']);
+  s.wave = 1; let count = s.units.length; g.startWave();
+  assert.deepEqual(s.units.slice(count).map(u => u.type).join(), 'knight,knight');
+  s.wave = 7; count = s.units.length; g.startWave();
+  assert.equal(s.units.slice(count).length, 4); assert.ok(s.units.slice(count).every(u => u.type === 'knight'));
+  s.wave = 20; g.startWave(); assert.equal(s.waveIn, 34);
+});
+
+test('knights hunt workers and depots, fight only blockers and fall back to the castle', () => {
+  const g = game(5), s = g.state, home = g.keep('player');
+  s.units = [];
+  const order = () => ({ type: 'raid', targetId: home.id, viaOutpost: false, postId: s.outposts[0].id });
+  const knight = g.createUnit('knight', 'enemy', 1000, 1000, order());
+  const soldier = g.createUnit('soldier', 'player', 1150, 1000, { type: 'hold', x: 1150, y: 1000 });
+  const worker = g.createUnit('worker', 'player', 1000, 1300);
+  const before = Math.hypot(knight.x - worker.x, knight.y - worker.y);
+  g.step(.5, dt => g.updateFighter(knight, dt));
+  assert.ok(Math.hypot(knight.x - worker.x, knight.y - worker.y) < before - 50);
+  for (let i = 0; i < 180; i++) { knight.cooldown = Math.max(0, knight.cooldown - 1 / 60); g.updateFighter(knight, 1 / 60); }
+  assert.ok(worker.hp < 55); assert.equal(soldier.hp, 125);
+  // A soldier in contact gets attacked instead.
+  soldier.x = knight.x + 30; soldier.y = knight.y; knight.cooldown = 0; g.updateFighter(knight, 1 / 60);
+  assert.ok(soldier.hp < 125);
+  // Depots are prey too; without prey the knight rides for the castle.
+  worker.hp = 0; soldier.hp = 0; s.units = s.units.filter(u => u.hp > 0);
+  const depot = g.createBuilding('depot', 'player', 1500, 1000);
+  knight.cooldown = 0;
+  for (let i = 0; i < 400; i++) { knight.cooldown = Math.max(0, knight.cooldown - 1 / 60); g.updateFighter(knight, 1 / 60); }
+  assert.ok(depot.hp < 300);
+  depot.hp = 0; const far = Math.hypot(knight.x - home.x, knight.y - home.y);
+  g.step(1, dt => g.updateFighter(knight, dt));
+  assert.ok(Math.hypot(knight.x - home.x, knight.y - home.y) < far - 100);
+  // Knights never capture posts.
+  const market = s.outposts[0]; market.owner = 'player'; market.control = 1;
+  s.units = [g.createUnit('knight', 'enemy', market.x, market.y)];
+  g.step(30, g.updateOutpost); assert.equal(market.owner, 'player');
+});
+
+test('bastions shoot nearby opponents on their own rhythm and stop once destroyed', () => {
+  const g = game(5), s = g.state, bastion = s.buildings.find(b => b.type === 'bastion');
+  s.units = [];
+  const soldier = g.createUnit('soldier', 'player', bastion.x, bastion.y + 200);
+  g.updateDefenses(.01); assert.equal(soldier.hp, 125 - 16);
+  g.updateDefenses(1.5); assert.equal(soldier.hp, 125 - 16);
+  g.updateDefenses(.2); assert.equal(soldier.hp, 125 - 32);
+  g.damage(bastion, 10000, 'player'); bastion.cooldown = 0; g.updateDefenses(2);
+  assert.equal(soldier.hp, 125 - 32);
+});
+
+test('the royal guard sorties once when the citadel falls below half', () => {
+  const g = game(5), s = g.state, citadel = g.keep('enemy');
+  s.outposts.forEach(p => { p.owner = 'player'; });
+  g.damage(citadel, 1200, 'player'); assert.equal(s.units.filter(u => u.type === 'champion').length, 0);
+  g.damage(citadel, 200, 'player');
+  assert.equal(s.units.filter(u => u.type === 'champion').length, 1); assert.equal(s.lastStandDone, true);
+  const count = s.units.length; g.damage(citadel, 200, 'player'); assert.equal(s.units.length, count);
+  assert.match(g.elements.get('toast').textContent, /Guardia reale/);
+  g.resetWorld(5); assert.equal(s.lastStandDone, false);
+  assert.equal(s.units.filter(u => u.type === 'champion').length, 0);
+});
+
+test('starting soldiers cannot rush the usurper citadel', () => {
+  const g = game(5), s = g.state;
+  const soldiers = s.units.filter(u => u.type === 'soldier' && u.team === 'player');
+  soldiers.forEach(u => { u.x += 2800; u.order = { type: 'attack', targetId: g.keep('enemy').id }; });
+  g.step(90);
+  assert.ok(g.keep('enemy').hp > 0); assert.ok(soldiers.every(u => u.hp === 0));
+});
+
+test('a prepared army within 36 population can take the citadel past bastions and royal guard', () => {
+  const g = game(5), s = g.state;
+  s.outposts.forEach(p => { p.owner = 'player'; p.control = 1; });
+  s.units = s.units.filter(u => u.team !== 'player' || u.type === 'worker');
+  for (const [type, count] of [['soldier', 18], ['archer', 10], ['mage', 5]]) {
+    for (let i = 0; i < count; i++) g.createUnit(type, 'player', 3050 - (type === 'soldier' ? 0 : 120), 1060 + i * 22,
+      { type: 'attack-move', x: 3800, y: 1400 });
+  }
+  assert.equal(s.units.filter(u => u.team === 'player').length, 36);
+  g.step(150);
+  assert.equal(s.lastStandDone, true);
+  assert.equal(g.keep('enemy').hp, 0); assert.equal(s.ended, true); assert.equal(s.nextLevel, false);
 });

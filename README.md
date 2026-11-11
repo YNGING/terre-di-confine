@@ -2,20 +2,20 @@
 
 Un RTS in italiano, **senza librerie esterne e senza backend**. HTML5, CSS e JavaScript con Canvas 2D: apri `index.html` oppure pubblica i file su GitHub Pages.
 
-## Quattro livelli
+## Cinque livelli
 
-Il selettore iniziale permette di giocare tutti e quattro i livelli. Vincendo uno dei primi tre appare **Livello successivo**; dopo una sconfitta si riprova il livello corrente. **Ricomincia** azzera il livello corrente e riapre il selettore. Da pausa o fine partita, **Scegli livello · abbandona la partita** torna al selettore azzerando la partita in corso. Non sono richiesti sblocco o salvataggi.
+Il selettore iniziale permette di giocare tutti e cinque i livelli. Vincendo uno dei primi quattro appare **Livello successivo**; dopo una sconfitta si riprova il livello corrente. **Ricomincia** azzera il livello corrente e riapre il selettore. Da pausa o fine partita, **Scegli livello · abbandona la partita** torna al selettore azzerando la partita in corso. Non sono richiesti sblocco o salvataggi.
 
-| | Livello 1 · Terre di Confine | Livello 2 · La frontiera contesa | Livello 3 · L’assedio delle tre torri | Livello 4 · La marca di ferro |
-| --- | --- | --- | --- | --- |
-| Mappa | 2400 × 1600 | 3000 × 2000 | 3000 × 2000, nuova disposizione | 3400 × 2200 |
-| Popolazione massima, incluse le code | 18 | 24 | 28 | 30 |
-| Risorse iniziali (legno / oro) | 200 / 110 | 200 / 110 | 200 / 110 | 180 / 80 |
-| Boschi / miniere | 9 / 5 | 15 / 8 | 16 / 9 | 16 / 7 |
-| Punti di controllo | 1 avamposto neutrale | 3 avamposti neutrali | 3 torri inizialmente nemiche | 4 torri nemiche, Forgia inclusa |
-| Nemici | Rossi, fortezza da 1400 PV | Rossi e Viola, fortezze da 1200 PV | Guarnigione, cittadella da 1800 PV e due accampamenti da 650 PV | Legione di ferro, fortezza da 2200 PV e due accampamenti da 800 PV, arieti |
-| Ondate | Prima a 75s, intervallo minimo 38s | Prima a 75s, minimo 38s | Prima a 75s, minimo 42s | Prima a 65s, minimo 36s, tenaglie |
-| Vittoria | Distruggi la fortezza rossa | Distruggi entrambe le fortezze | Distruggi la cittadella | Distruggi la fortezza di ferro |
+| | Livello 1 · Terre di Confine | Livello 2 · La frontiera contesa | Livello 3 · L’assedio delle tre torri | Livello 4 · La marca di ferro | Livello 5 · La corona usurpata |
+| --- | --- | --- | --- | --- | --- |
+| Mappa | 2400 × 1600 | 3000 × 2000 | 3000 × 2000, nuova disposizione | 3400 × 2200 | 4200 × 2800 |
+| Popolazione massima, incluse le code | 18 | 24 | 28 | 30 | 36 |
+| Risorse iniziali (legno / oro) | 200 / 110 | 200 / 110 | 200 / 110 | 180 / 80 | 220 / 100 |
+| Boschi / miniere | 9 / 5 | 15 / 8 | 16 / 9 | 16 / 7 | 24 / 12, di cui 4 ricchi |
+| Punti di controllo | 1 avamposto neutrale | 3 avamposti neutrali | 3 torri inizialmente nemiche | 4 torri nemiche, Forgia inclusa | 4 torri nemiche e il Mulino neutrale |
+| Nemici | Rossi, fortezza da 1400 PV | Rossi e Viola, fortezze da 1200 PV | Guarnigione, cittadella da 1800 PV e due accampamenti da 650 PV | Legione di ferro, fortezza da 2200 PV e due accampamenti da 800 PV, arieti | Corona usurpata, cittadella da 2600 PV, due bastioni, due accampamenti da 850 PV, Scuderie da 700 PV, arieti, cavalieri e Guardia reale |
+| Ondate | Prima a 75s, intervallo minimo 38s | Prima a 75s, minimo 38s | Prima a 75s, minimo 42s | Prima a 65s, minimo 36s, tenaglie | Prima a 65s, minimo 34s, cavalleria e tenaglie |
+| Vittoria | Distruggi la fortezza rossa | Distruggi entrambe le fortezze | Distruggi la cittadella | Distruggi la fortezza di ferro | Distruggi la cittadella dell’usurpatore |
 
 Costi e statistiche delle unità sono condivisi; la dotazione iniziale è di tre contadini e due armigeri. Il primo livello conserva mappa e bilanciamento originali.
 
@@ -59,6 +59,21 @@ Il quarto livello riprende l’assedio del terzo e lo rende più duro. Si parte 
 - **Tenaglia:** il calendario è Campo nord, Campo sud, Fortezza, poi **entrambi i campi insieme**, e così via. La tenaglia è annunciata 20 secondi prima («Tenaglia: Campo nord + Campo sud») e i due campi sono evidenziati sulla minimappa. Se un campo è distrutto, arriva solo la metà dell’altro.
 - **Ariete:** dalla quinta ondata ogni ondata della fortezza include un ariete (320 PV, lento, 55 danni ogni 2,4s). Ignora le unità e punta all’edificio alleato più vicino. È **corazzato**: frecce di arcieri, castello e Torre di guardia gli fanno metà danni. Non conquista torri. Fermalo con armigeri e maghi.
 - Ondate fino a 12 unità dalla fortezza, intervallo minimo 36 secondi, prima ondata a 65 secondi, contrattacchi annunciati come nel terzo livello.
+
+Dopo la vittoria si passa al quinto livello.
+
+### La corona usurpata
+
+Il livello finale si gioca sulla mappa più grande: 4200 × 2800, popolazione 36, partenza con 220 legno e 100 oro. La **Corona usurpata** difende la sua cittadella da 2600 PV con quattro torri (Mercato, Arcana, Guardia e Forgia, 15% di scudo ciascuna) e con un secondo anello di difese.
+
+- **Magazzino** (solo in questo livello): 80 legno, tasto **M** o pulsante del contadino, costruzione in 8 secondi. Una volta completato, i contadini vi depositano legno e oro come al castello. Il deposito più vicino viene scelto da solo.
+- **Basi avanzate:** caserme e magazzini si possono costruire vicino al castello **oppure** fra 150 e 380 di distanza da una torre alleata e non contesa. Durante il posizionamento le aree consentite sono tratteggiate.
+- **Giacimenti ricchi:** quattro giacimenti più grandi e luminosi (legno 1000, oro 900, contro 500 e 380), anche sulla minimappa. Si trovano nelle zone contese: vicino al Mulino, sotto la Torre di guardia e fra i due campi.
+- **Mulino:** un quinto punto di controllo, **neutrale** all’inizio, a sud-ovest. Dà 8 oro ogni 8 secondi e fa da deposito. Non conta per lo scudo.
+- **Scuderie e cavalieri:** le Scuderie mandano fino a 4 **cavalieri** (110 PV, velocissimi). Inseguono contadini e magazzini, combattono solo chi li blocca da vicino e, senza prede, puntano al castello. Non conquistano torri.
+- **Bastioni:** due torrioni da 900 PV sulla via della cittadella, con frecce da 16 danni ogni 1,6 secondi e portata 240. Non serve abbatterli per vincere.
+- **Guardia reale:** la prima volta che la cittadella scende sotto metà vita esce un **Campione** (650 PV, 30 danni) con quattro predoni. L’avviso compare in alto e sulla minimappa.
+- **Ondate:** Scuderie, Campo nord, Campo sud, Cittadella, Scuderie, poi i due campi a tenaglia, e così via. Arieti dalla quinta ondata, contrattacchi annunciati, intervallo minimo 34 secondi.
 
 È l’ultimo livello: dopo la vittoria si può rigiocarlo o tornare al selettore.
 
@@ -117,6 +132,7 @@ Il **mago** ha 58 PV e lancia automaticamente un’esplosione ogni 3 secondi: 30
 | Tornare alla base | Spazio |
 | Centrare l’avamposto | Pulsante di stato dell’avamposto |
 | Costruire la caserma | B, con un contadino selezionato |
+| Costruire un magazzino (livello 5) | M, con un contadino selezionato |
 | Reclutare contadino / armigero | R, con castello / caserma selezionati |
 | Reclutare arciere / mago | Q / E, con caserma selezionata |
 | Punto di raduno | Clic destro con l’edificio selezionato, o pulsante dedicato e clic; dal castello, su una risorsa per la raccolta automatica |
@@ -151,11 +167,11 @@ Per eseguire i test di regressione, con Node.js 22 o superiore e senza installar
 node --test tests/game.test.cjs
 ```
 
-I test verificano raccolta ed esaurimento, arrivi diagonali e raccolta prolungata, prenotazione della popolazione, code e rimborsi, ritirata, mantenimento posizione, attacchi a distanza, danni ad area, conquista e perdita dell’avamposto, ondate, assalto e riavvio. I test dei livelli successivi coprono inoltre conquista fra tre fazioni, depositi multipli, limite 24 con prenotazioni, attacchi fra rivali, ondate alternate, eliminazione dei fronti e passaggio fra livelli. Per l’assedio verificano anche bonus distinti delle torri, scudo dinamico, tiro della Guardia, contrattacchi annunciati, limite 28 e vittoria con un esercito preparato. Per la marca di ferro verificano scudo da quattro torri, Forgia, tenaglie, arieti corazzati, limite 30 e passaggio dal terzo livello; per gli aiuti al comando cura, avvisi, messaggi, raduno su risorse, gruppi e depositi. Usano una simulazione accelerata in una VM; le interazioni e il disegno richiedono anche una prova nel browser.
+I test verificano raccolta ed esaurimento, arrivi diagonali e raccolta prolungata, prenotazione della popolazione, code e rimborsi, ritirata, mantenimento posizione, attacchi a distanza, danni ad area, conquista e perdita dell’avamposto, ondate, assalto e riavvio. I test dei livelli successivi coprono inoltre conquista fra tre fazioni, depositi multipli, limite 24 con prenotazioni, attacchi fra rivali, ondate alternate, eliminazione dei fronti e passaggio fra livelli. Per l’assedio verificano anche bonus distinti delle torri, scudo dinamico, tiro della Guardia, contrattacchi annunciati, limite 28 e vittoria con un esercito preparato. Per la marca di ferro verificano scudo da quattro torri, Forgia, tenaglie, arieti corazzati, limite 30 e passaggio dal terzo livello; per la corona usurpata mappa e risorse, magazzini e basi avanzate, cavalieri, bastioni, Guardia reale e assalto con 36 unità; per gli aiuti al comando cura, avvisi, messaggi, raduno su risorse, gruppi e depositi. Usano una simulazione accelerata in una VM; le interazioni e il disegno richiedono anche una prova nel browser.
 
-`rules.js` raccoglie costi, statistiche e le configurazioni `RTS_LEVELS` (mappe, popolazione, risorse iniziali, avamposti, fortezze e calendario delle ondate) per facilitare il bilanciamento. Il comportamento di ogni livello dipende dai suoi campi (`kind`, `waveIntro`/`waveOrder` con tenaglie, `minWaveInterval`, `shieldPerTower`, `counterattacks`, `ramFrom`…), quindi un nuovo livello si aggiunge soprattutto come configurazione. `game.js` gestisce simulazione, comandi e Canvas. La diagnostica `window.__rtsDebug.snapshot()` restituisce solo un riepilogo dello stato.
+`rules.js` raccoglie costi, statistiche e le configurazioni `RTS_LEVELS` (mappe, popolazione, risorse iniziali, avamposti, fortezze e calendario delle ondate) per facilitare il bilanciamento. Il comportamento di ogni livello dipende dai suoi campi (`kind`, `waveIntro`/`waveOrder` con tenaglie, `minWaveInterval`, `shieldPerTower`, `counterattacks`, `ramFrom`, `buildings`, `forwardBuild`, `bastions`, `lastStand`…), quindi un nuovo livello si aggiunge soprattutto come configurazione. `game.js` gestisce simulazione, comandi e Canvas. La diagnostica `window.__rtsDebug.snapshot()` restituisce solo un riepilogo dello stato.
 
-Il progetto resta single-player con quattro mappe fisse, movimento diretto e IA a ondate. Ricerca dei percorsi intorno agli ostacoli, nebbia di guerra, salvataggi e multiplayer sono sviluppi futuri. Il bilanciamento può essere ulteriormente affinato con partite reali.
+Il progetto resta single-player con cinque mappe fisse, movimento diretto e IA a ondate. Ricerca dei percorsi intorno agli ostacoli, nebbia di guerra, salvataggi e multiplayer sono sviluppi futuri. Il bilanciamento può essere ulteriormente affinato con partite reali.
 
 ```text
 terre-di-confine/
