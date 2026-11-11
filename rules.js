@@ -43,6 +43,28 @@
         [1550,260], [1580,1770], [1960,330], [2030,920], [1990,1730], [2320,250],
         [2360,1770], [2800,850], [2800,1240]],
       gold: [[810,1060], [1300,480], [1300,1510], [1760,960], [2030,700], [2070,1290], [2780,370], [2780,1640]]
+    },
+    {
+      id: 3, name: 'L’assedio delle tre torri', width: 3000, height: 2000, population: 28,
+      firstWave: 75, waveCap: 10, enemyHp: 1800, campHp: 650,
+      shieldPerTower: .2, warningTime: 20, waveOrder: [1, 2, 0], factionName: 'Guarnigione',
+      description: 'Conquista le torri: Mercato per oro e deposito, Arcana per i maghi, Guardia per il tiro difensivo. Ogni torre nemica protegge la cittadella del 20%. Elimina gli accampamenti per fermare i rinforzi e distruggi la cittadella. Popolazione: 28.',
+      player: [450, 1000],
+      enemies: [{ team: 'enemy', name: 'Cittadella', x: 2650, y: 1000, post: 0 },
+        { team: 'enemy', type: 'camp', name: 'Campo nord', x: 2160, y: 460, post: 1 },
+        { team: 'enemy', type: 'camp', name: 'Campo sud', x: 2150, y: 1580, post: 2 }],
+      posts: [{ name: 'Torre del mercato', role: 'market', x: 1050, y: 1000, gold: 12, initialOwner: 'enemy',
+          bonus: '12 oro ogni 8s e deposito risorse quando alleata e non contesa.' },
+        { name: 'Torre arcana', role: 'arcane', x: 1600, y: 620, gold: 0, initialOwner: 'enemy',
+          bonus: 'Sblocca i maghi finché alleata. I maghi già reclutati o in coda restano disponibili.' },
+        { name: 'Torre di guardia', role: 'guard', x: 1680, y: 1400, gold: 0, initialOwner: 'enemy',
+          damage: 12, range: 220, attackTime: 2,
+          bonus: 'Freccia automatica: 12 danni ogni 2s, portata 220. Difende chi la controlla; tace se contesa.' }],
+      wood: [[750,650], [750,1330], [1060,400], [1100,1580], [1320,810], [1340,1220],
+        [1500,260], [1550,1780], [1880,350], [1970,930], [1920,1750], [2400,270],
+        [2410,1760], [2800,630], [2810,1390], [1300,1850]],
+      gold: [[810,1060], [1250,510], [1250,1510], [1760,940], [1850,700], [1920,1210],
+        [2500,500], [2550,1570], [2800,1840]]
     }
   ];
 })();

@@ -56,3 +56,6 @@
   .modal-card{padding:15px 25px}.modal-crest{display:none}
 }
 
+
+/* Announced siege targets remain visible after the short toast disappears. */
+.wave-notice{flex-basis:100%;color:#ffcd7e;line-height:1.5;letter-spacing:0}.wave-notice:empty{display:none}

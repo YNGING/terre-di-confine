@@ -40,7 +40,7 @@
     <div class="quick-actions" aria-label="Selezione rapida"><button id="cancelOrderBtn" class="hidden">Annulla ordine</button><button id="idleBtn" title="Contadino inattivo (I)">⚒ Inattivi: 3</button><button id="armyBtn" title="Seleziona l’esercito (G)">⚔ Esercito</button></div>
 
     <div class="bottom-left"><div id="toast" class="toast" role="status" aria-live="polite"></div><div class="controls-hint"><span class="key">W A S D</span> Sposta mappa <span class="hint-sep">·</span> <span class="key">SPAZIO</span> Torna alla base</div></div>
-    <aside class="minimap-container" aria-label="Minimappa"><div class="minimap-header"><span>✧ &nbsp; IL REGNO</span><span id="waveText">ONDATA 01</span></div><canvas id="minimap" width="240" height="156" aria-label="Tocca per spostare la visuale"></canvas></aside>
+    <aside class="minimap-container" aria-label="Minimappa"><div class="minimap-header"><span>✧ &nbsp; IL REGNO</span><span id="waveText">ONDATA 01</span><span id="waveNotice" class="wave-notice" role="status" aria-live="polite"></span></div><canvas id="minimap" width="240" height="156" aria-label="Tocca per spostare la visuale"></canvas></aside>
     <div id="placementNotice" class="placement-notice hidden">⌂ &nbsp; Scegli dove costruire la caserma <span>ESC per annullare</span></div>
     <div id="dragBox" class="drag-box hidden"></div>
 
@@ -54,13 +54,14 @@
           <select id="levelSelect">
             <option value="1">1 · Terre di Confine</option>
             <option value="2">2 · La frontiera contesa</option>
+            <option value="3">3 · L’assedio delle tre torri</option>
           </select>
         </div>
         <p id="modalSubtitle" class="modal-subtitle">Raccogli risorse, guida armigeri e arcieri, conquista l’avamposto per reclutare maghi e assalta la fortezza rivale.</p>
         <div id="modalGuide" class="modal-guide">
           <div><span>01</span><strong>Seleziona</strong><small>Clicca sulle unità o trascina per selezionare un gruppo.</small></div>
           <div><span>02</span><strong>Comanda</strong><small>Clic destro o tocco sulla meta. Muovi per ritirarti; Avanza (F) per combattere; Mantieni (X) per difendere.</small></div>
-          <div><span>03</span><strong>Conquista</strong><small>Costruisci la caserma (B). Armigero: R, arciere: Q, mago: E. Tieni truppe nell’avamposto per sbloccare i maghi.</small></div>
+          <div><span>03</span><strong>Conquista</strong><small id="conquestGuide">Costruisci la caserma (B). Armigero: R, arciere: Q, mago: E. Tieni truppe nell’avamposto per sbloccare i maghi.</small></div>
         </div>
         <button id="modalButton" class="primary-button">Inizia la partita <span aria-hidden="true">→</span></button>
         <button id="chooseLevelBtn" class="secondary-button hidden">Scegli livello · abbandona la partita</button>

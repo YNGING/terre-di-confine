@@ -28,7 +28,7 @@ function game(level = 1) {
   const anchor = '  // Expose a tiny read-only diagnostic surface for automated smoke tests.';
   assert.ok(source.includes(anchor), 'test injection anchor exists');
   vm.runInContext(source.replace(anchor,
-    '  globalThis.testGame = {state, createUnit, createBuilding, resetWorld, keep, select, recruit, cancelTraining, reservedPopulation, orderUnits, update, updateWorker, updateFighter, updateOutpost, updateTraining, performAttack, damage, startWave, depositCargo, dispatchCommand, startGame, restart, finish, validBuild};\n' + anchor), sandbox);
+    '  globalThis.testGame = {state, createUnit, createBuilding, resetWorld, keep, select, recruit, cancelTraining, reservedPopulation, orderUnits, update, updateWorker, updateFighter, updateOutpost, updateTraining, performAttack, damage, startWave, depositCargo, dispatchCommand, startGame, restart, finish, validBuild, citadelShield, updateTowerDefenses, planWave, frontHome, waveFront};\n' + anchor), sandbox);
   const g = sandbox.testGame; g.resetWorld(level); g.state.running = true; g.elements = elements;
   g.step = (seconds, fn = g.update) => { for (let i = 0; i < Math.ceil(seconds * 60); i++) fn(1 / 60); };
   return g;
@@ -210,7 +210,7 @@ test('any owned post unlocks magi, contest is local, and rival-to-rival capture 
   g.step(12.1, g.updateOutpost);
   assert.equal(west.owner, 'neutral'); assert.equal(north.owner, 'player'); assert.equal(south.owner, 'player');
   g.select(b); g.recruit('mage'); assert.equal(b.queue.length, 1);
-  const gold = s.gold; g.step(8, g.updateOutpost); assert.equal(s.gold, gold + 12);
+  const gold = s.gold; g.step(8.1, g.updateOutpost); assert.equal(s.gold, gold + 12);
   const red = g.createUnit('raider', 'enemy', north.x, north.y);
   const beforeContest = s.gold; g.step(8, g.updateOutpost);
   assert.equal(north.contested, true); assert.equal(south.contested, false); assert.equal(s.gold, beforeContest + 6);
@@ -250,7 +250,7 @@ test('rivals arrive on one shared wave clock and destroyed fronts stop spawning'
   const count = s.units.length; g.startWave();
   assert.equal(s.units.length, count); assert.equal(s.wave, 5); assert.ok(s.waveIn > 0);
   g.startWave(); assert.equal(s.units.length, count + 6);
-  g.damage(g.keep('enemy2'), 10000); assert.equal(s.ended, true); assert.equal(s.nextLevel, false);
+  g.damage(g.keep('enemy2'), 10000); assert.equal(s.ended, true); assert.equal(s.nextLevel, true);
 });
 
 test('the player can focus the purple rival; rivals fight each other including splash damage', () => {
@@ -312,4 +312,160 @@ test('the defeat count credits player attacks, not fighting between rivals', () 
   const soldier = g.createUnit('soldier', 'player', 1310, 500);
   red.hp = 1; g.performAttack(soldier, red, 1 / 60);
   assert.equal(s.stats.killed, 1);
+});
+
+test('siege starts with three enemy towers, two camps and a protected citadel', () => {
+  const g = game(3), s = g.state;
+  assert.equal(s.popCap, 28); assert.equal(s.wood, 200); assert.equal(s.gold, 110);
+  assert.equal(s.buildings.filter(b => b.type === 'camp').length, 2);
+  assert.equal(s.buildings.filter(b => b.type === 'keep' && b.team === 'enemy').length, 1);
+  assert.ok(s.outposts.every(p => p.owner === 'enemy' && p.control === -1));
+  assert.ok(Math.abs(g.citadelShield() - .6) < 1e-9);
+  assert.equal(g.keep('enemy').hp, 1800);
+  assert.equal(s.nodes.filter(n => n.type === 'wood').length, 16);
+  assert.equal(s.nodes.filter(n => n.type === 'gold').length, 9);
+});
+
+test('each hostile tower protects the citadel, never camps or the player castle', () => {
+  const g = game(3), s = g.state, citadel = g.keep('enemy');
+  const hit = expected => { const hp = citadel.hp; g.damage(citadel, 100, 'player'); assert.ok(Math.abs(hp - citadel.hp - expected) < 1e-8); };
+  hit(40);
+  s.outposts[0].contested = true; hit(40); // Enemy ownership persists during a contest.
+  s.outposts[0].owner = 'neutral'; hit(60);
+  s.outposts[1].owner = 'player'; hit(80);
+  s.outposts[2].owner = 'player'; hit(100);
+  s.outposts[0].owner = 'enemy'; hit(80);
+  const camp = s.buildings.find(b => b.type === 'camp'), home = g.keep('player');
+  const hp = camp.hp; g.damage(camp, 100, 'player'); assert.equal(camp.hp, hp - 100);
+  g.damage(home, 100, 'enemy'); assert.equal(home.hp, 900);
+});
+
+test('neutralizing a siege tower removes its shield before the full capture finishes', () => {
+  const g = game(3), p = g.state.outposts[0];
+  g.createUnit('soldier', 'player', p.x, p.y);
+  g.step(12.1, g.updateOutpost); assert.equal(p.owner, 'neutral');
+  assert.ok(Math.abs(g.citadelShield() - .4) < 1e-8);
+  g.step(12.1, g.updateOutpost); assert.equal(p.owner, 'player');
+});
+
+test('tower bonuses are distinct: only market deposits and income, only arcane magi', () => {
+  const g = game(3), s = g.state, [market, arcane, guard] = s.outposts;
+  const b = g.createBuilding('barracks', 'player', 650, 1000); s.wood = s.gold = 1000;
+  market.owner = guard.owner = 'player';
+  g.select(b); g.recruit('mage'); assert.equal(b.queue.length, 0);
+  arcane.owner = 'player'; g.recruit('mage'); assert.equal(b.queue.length, 1);
+  const gold = s.gold; g.step(8.1, g.updateOutpost); assert.equal(s.gold, gold + 12);
+  market.contested = true;
+  const worker = g.createUnit('worker', 'player', arcane.x, arcane.y);
+  worker.carry = 18; worker.carryType = 'gold';
+  assert.equal(g.depositCargo(worker, 1 / 60), false); assert.equal(worker.carry, 18);
+  market.contested = false; worker.x = market.x; worker.y = market.y;
+  assert.equal(g.depositCargo(worker, 1 / 60), true);
+  arcane.owner = 'enemy'; g.recruit('mage'); assert.equal(b.queue.length, 1);
+  g.step(18.1, g.updateTraining); assert.ok(s.units.some(u => u.type === 'mage' && u.team === 'player'));
+});
+
+test('guard tower targets opponents only, obeys cooldown and stops when contested or neutral', () => {
+  const g = game(3), p = g.state.outposts[2];
+  const player = g.createUnit('soldier', 'player', p.x + 180, p.y);
+  const enemy = g.createUnit('raider', 'enemy', p.x - 180, p.y);
+  g.updateTowerDefenses(.1); assert.equal(player.hp, player.maxHp - 12); assert.equal(enemy.hp, enemy.maxHp);
+  g.updateTowerDefenses(.1); assert.equal(player.hp, player.maxHp - 12);
+  p.contested = true; g.updateTowerDefenses(3); assert.equal(player.hp, player.maxHp - 12);
+  p.contested = false; p.owner = 'neutral'; g.updateTowerDefenses(3); assert.equal(player.hp, player.maxHp - 12);
+  p.owner = 'player'; g.updateTowerDefenses(.1); assert.equal(enemy.hp, enemy.maxHp - 12);
+  assert.equal(player.hp, player.maxHp - 12);
+  // Presence is recalculated before the tower fires, even with zero cooldown.
+  player.x = enemy.x = p.x; p.cooldown = 0;
+  g.updateOutpost(.1); g.updateTowerDefenses(.1);
+  assert.equal(p.contested, true); assert.equal(enemy.hp, enemy.maxHp - 12);
+});
+
+test('camps have separate wave slots, small reinforcements, and stop permanently on destruction', () => {
+  const g = game(3), s = g.state, camps = s.buildings.filter(b => b.type === 'camp');
+  g.startWave(); assert.equal(s.units.filter(u => u.order?.sourceId === camps[0].id).length, 2);
+  g.startWave(); assert.equal(s.units.filter(u => u.order?.sourceId === camps[1].id).length, 3);
+  g.startWave(); assert.equal(s.units.filter(u => u.order?.sourceId === g.keep('enemy').id).length, 4);
+  g.damage(camps[0], 10000, 'player'); assert.equal(s.ended, false);
+  let count = s.units.length; g.startWave(); assert.equal(s.units.length, count);
+  s.wave = 20; count = s.units.length; g.startWave(); assert.equal(s.units.length, count + 5);
+  g.damage(camps[1], 10000, 'player'); s.wave = 23;
+  count = s.units.length; g.startWave(); assert.equal(s.units.length, count);
+  assert.equal(s.ended, false); assert.ok(g.keep('enemy').hp > 0);
+});
+
+test('counterattack announces and retains its target, replacing a normal wave; pause freezes it', () => {
+  const g = game(3), s = g.state, p = s.outposts[0];
+  p.owner = 'player'; p.control = 1; s.wave = 3; s.waveIn = 20.01;
+  g.step(.04); assert.equal(s.wavePlan.counter, true); assert.equal(s.wavePlan.postId, p.id);
+  assert.match(g.elements.get('waveNotice').textContent, /Torre del mercato/);
+  s.outposts[1].owner = 'player'; // A later capture must not silently change the announced target.
+  s.running = false; const remaining = s.waveIn; g.step(10); assert.equal(s.waveIn, remaining);
+  s.running = true; const count = s.units.length; g.step(20);
+  assert.equal(s.wave, 4); assert.equal(s.units.length, count + 4);
+  const raid = s.units.filter(u => u.order?.type === 'raid');
+  assert.ok(raid.every(u => u.order.postId === p.id && u.order.viaOutpost));
+  assert.equal(s.wavePlan, null);
+  g.resetWorld(3); assert.equal(s.wavePlan, null); assert.equal(s.wave, 1);
+});
+
+test('a counterattack can recapture a tower and restore the citadel protection', () => {
+  const g = game(3), s = g.state, p = s.outposts[0];
+  p.owner = 'player'; p.control = 1;
+  g.createUnit('raider', 'enemy', p.x, p.y);
+  g.step(24.2, g.updateOutpost);
+  assert.equal(p.owner, 'enemy'); assert.ok(Math.abs(g.citadelShield() - .6) < 1e-8);
+});
+
+test('siege reserves population up to 28 across buildings', () => {
+  const g = game(3), s = g.state; s.wood = s.gold = 10000;
+  for (let i = 0; i < 22; i++) g.createUnit('worker', 'player', 350, 1000);
+  const b = g.createBuilding('barracks', 'player', 650, 1000);
+  g.select(b); g.recruit('soldier'); g.select(g.keep('player')); g.recruit('worker');
+  assert.equal(g.reservedPopulation(), 1); g.step(8, g.updateTraining);
+  assert.equal(s.units.filter(u => u.team === 'player').length, 28);
+});
+
+test('level two advances to the siege; destroying the citadel wins even with camps standing', () => {
+  const g = game(2), s = g.state;
+  g.damage(g.keep('enemy'), 10000); g.damage(g.keep('enemy2'), 10000);
+  assert.equal(s.nextLevel, true); g.startGame(); assert.equal(s.popCap, 28);
+  g.damage(g.keep('enemy'), 10000, 'player'); assert.equal(s.ended, true); assert.equal(s.nextLevel, false);
+  assert.equal(s.buildings.filter(b => b.type === 'camp' && b.hp > 0).length, 2);
+  assert.match(g.elements.get('modalSubtitle').textContent, /cittadella/);
+  g.startGame(); assert.equal(s.popCap, 28); assert.equal(g.keep('enemy').hp, 1800);
+  g.damage(g.keep('player'), 10000); assert.equal(s.ended, true); assert.equal(s.nextLevel, false);
+  g.restart(1); assert.equal(s.popCap, 18); assert.equal(s.buildings.some(b => b.type === 'camp'), false);
+  assert.equal(g.citadelShield(), 0); assert.equal(s.outposts[0].owner, 'neutral');
+});
+
+test('starting soldiers cannot rush the shielded citadel', () => {
+  const g = game(3), s = g.state;
+  const soldiers = s.units.filter(u => u.type === 'soldier' && u.team === 'player');
+  soldiers.forEach(u => u.order = { type: 'attack', targetId: g.keep('enemy').id });
+  g.step(100);
+  assert.ok(g.keep('enemy').hp > 0); assert.ok(soldiers.every(u => u.hp === 0));
+});
+
+test('a prepared army within 28 population can win after capturing the towers', () => {
+  const g = game(3), s = g.state;
+  s.outposts.forEach(p => { p.owner = 'player'; p.control = 1; });
+  s.units = s.units.filter(u => u.team !== 'player' || u.type === 'worker');
+  for (const [type, count] of [['soldier', 15], ['archer', 7], ['mage', 3]]) {
+    for (let i = 0; i < count; i++) g.createUnit(type, 'player', 2220 - (type === 'soldier' ? 0 : 120), 840 + i * 25,
+      { type: 'attack-move', x: 2650, y: 1000 });
+  }
+  assert.equal(s.units.filter(u => u.team === 'player').length, 28);
+  g.step(100); assert.equal(g.keep('enemy').hp, 0); assert.equal(s.ended, true);
+  assert.equal(s.nextLevel, false);
+});
+
+test('capturing after the announcement window cannot create an unannounced counterattack', () => {
+  const g = game(3), s = g.state;
+  s.wave = 3; s.waveIn = 20; g.update(.02);
+  assert.equal(s.wavePlan.counter, false);
+  s.outposts[1].owner = 'player'; s.outposts[1].control = 1;
+  const planned = s.wavePlan.postId; g.step(20);
+  assert.equal(s.wave, 4);
+  assert.ok(s.units.filter(u => u.order?.type === 'raid').every(u => u.order.postId === planned));
 });

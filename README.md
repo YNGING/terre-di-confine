@@ -2,18 +2,18 @@
 
 Un RTS in italiano, **senza librerie esterne e senza backend**. HTML5, CSS e JavaScript con Canvas 2D: apri `index.html` oppure pubblica i file su GitHub Pages.
 
-## Due livelli
+## Tre livelli
 
-Il selettore iniziale permette di giocare entrambi i livelli. Vincendo il primo appare **Livello successivo**; dopo una sconfitta si riprova il livello corrente. **Ricomincia** azzera il livello corrente e riapre il selettore. Da pausa o fine partita, **Scegli livello · abbandona la partita** torna al selettore azzerando la partita in corso. Non sono richiesti sblocco o salvataggi.
+Il selettore iniziale permette di giocare tutti e tre i livelli. Vincendo il primo o il secondo appare **Livello successivo**; dopo una sconfitta si riprova il livello corrente. **Ricomincia** azzera il livello corrente e riapre il selettore. Da pausa o fine partita, **Scegli livello · abbandona la partita** torna al selettore azzerando la partita in corso. Non sono richiesti sblocco o salvataggi.
 
-| | Livello 1 · Terre di Confine | Livello 2 · La frontiera contesa |
-| --- | --- | --- |
-| Mappa | 2400 × 1600 | 3000 × 2000 |
-| Popolazione massima, incluse le code | 18 | 24 |
-| Boschi / miniere | 9 / 5 | 15 / 8 |
-| Avamposti | 1, con 8 oro ogni 8s | 3, con 6 oro ogni 8s ciascuno |
-| Fortezze rivali | Rossi, 1400 PV | Rossi e Viola, 1200 PV ciascuna |
-| Vittoria | Distruggi la fortezza rossa | Distruggi entrambe le fortezze |
+| | Livello 1 · Terre di Confine | Livello 2 · La frontiera contesa | Livello 3 · L’assedio delle tre torri |
+| --- | --- | --- | --- |
+| Mappa | 2400 × 1600 | 3000 × 2000 | 3000 × 2000, nuova disposizione |
+| Popolazione massima, incluse le code | 18 | 24 | 28 |
+| Boschi / miniere | 9 / 5 | 15 / 8 | 16 / 9 |
+| Punti di controllo | 1 avamposto neutrale | 3 avamposti neutrali | 3 torri inizialmente nemiche |
+| Nemici | Rossi, fortezza da 1400 PV | Rossi e Viola, fortezze da 1200 PV | Guarnigione, cittadella da 1800 PV e due accampamenti da 650 PV |
+| Vittoria | Distruggi la fortezza rossa | Distruggi entrambe le fortezze | Distruggi la cittadella |
 
 Costi, statistiche delle unità e dotazione iniziale sono condivisi: 200 legno, 110 oro, tre contadini e due armigeri. Il primo livello conserva mappa e bilanciamento originali.
 
@@ -25,6 +25,28 @@ Costi, statistiche delle unità e dotazione iniziale sono condivisi: 200 legno, 
 - Un solo calendario regola le ondate: prima partenza a 75 secondi, prime due ondate rosse, Viola dalla terza (circa 195 secondi). Poi i fronti si alternano. Le ondate crescono fino a 10 unità, con arcieri dalla terza e maghi dalla sesta, e alternano castello e avamposti come obiettivi.
 - Distruggere una fortezza lascia vuoti i suoi successivi turni di attacco: il fronte superstite non riceve ondate aggiuntive. Le truppe già presenti restano in campo. La partita termina quando entrambe le fortezze sono distrutte, oppure quando cade il castello del giocatore.
 - La minimappa distingue i colori delle fazioni ed evidenzia la fortezza da cui partirà la prossima ondata. La scritta **TREGUA** indica il turno di un fronte già sconfitto. Clic ripetuti sul pulsante degli avamposti centrano e selezionano ponente, nord e sud.
+
+### L’assedio delle tre torri
+
+La terza mappa introduce un assedio con obiettivi intermedi. Le tre torri iniziano sotto controllo della **Guarnigione**, la stessa fazione che difende cittadella e accampamenti. Ogni torre offre un beneficio diverso:
+
+| Torre | Beneficio sotto controllo alleato |
+| --- | --- |
+| Mercato, a ponente | **12 oro ogni 8 secondi** e deposito per i contadini; entrambi sospesi se contesa |
+| Arcana, a nord | Sblocca il reclutamento dei maghi finché alleata; maghi vivi e unità già pagate in coda restano disponibili dopo la perdita |
+| Guardia, a sud | Frecce automatiche: **12 danni ogni 2 secondi**, portata 220, contro le unità avversarie; difende chi la controlla e non spara se neutrale o contesa |
+
+La Torre arcana e la Torre di guardia **non producono oro e non sono depositi**. I contadini possono depositare solo al castello o al Mercato alleato e non conteso. Solo la Torre arcana sblocca i maghi, anche se il Mercato è già conquistato.
+
+**Scudo della cittadella:** ciascuna torre ancora nemica riduce i danni alla cittadella di 20 punti percentuali, fino al 60% iniziale. Per esempio, un colpo da 100 danni ne infligge 40 con tutte le torri nemiche, 60 con due, 80 con una e 100 senza torri nemiche. Lo scudo non rende mai invulnerabile la cittadella e non protegge gli accampamenti. Il suo valore è visibile nell’obiettivo e selezionando la cittadella; l’alone viola indica che è attivo.
+
+Per sottrarre una torre al nemico occorrono circa 12 secondi di neutralizzazione e altri 12 di conquista con almeno un combattente nel cerchio. Lo scudo diminuisce già alla neutralizzazione; se il nemico riconquista una torre, la sua quota di protezione ritorna. La presenza di fazioni avversarie ferma la conquista. Una torre ancora nemica e contesa continua a contribuire allo scudo fino alla neutralizzazione.
+
+**Un solo calendario di ondate:** prima partenza a 75 secondi, poi si alternano Campo nord, Campo sud e Cittadella. Gli accampamenti inviano al massimo 5 predoni/arcieri; la cittadella arriva gradualmente a 10 combattenti, con maghi dalla sesta ondata. Gli intervalli diminuiscono fino a 42 secondi. Distruggere un accampamento elimina le sue successive ondate lasciandone vuoti i turni, senza trasferire rinforzi agli altri fronti; i soldati già usciti dal campo restano attivi.
+
+Nei turni della cittadella, dalla terza ondata, può essere annunciato un **contrattacco** contro una torre alleata: avviso 20 secondi prima, nome del bersaglio sopra la minimappa e riquadro dorato sulla torre. Il bersaglio annunciato resta fisso per quell’ondata. Il contrattacco sostituisce l’attacco normale, senza aggiungere un secondo flusso di nemici. Se il bersaglio è già tornato nemico, le truppe proseguono verso il castello. La pausa ferma anche il conto alla rovescia.
+
+Gli accampamenti e le torri sono obiettivi strategici, non requisiti obbligatori: **distruggere la cittadella basta per vincere**, anche con accampamenti ancora attivi. Perdere il proprio castello termina la partita. Dopo vittoria o sconfitta si può rigiocare il terzo livello o tornare al selettore.
 
 ## Come si gioca (livello 1)
 
@@ -105,11 +127,11 @@ Per eseguire i test di regressione, con Node.js 22 o superiore e senza installar
 node --test tests/game.test.cjs
 ```
 
-I test verificano raccolta ed esaurimento, arrivi diagonali e raccolta prolungata, prenotazione della popolazione, code e rimborsi, ritirata, mantenimento posizione, attacchi a distanza, danni ad area, conquista e perdita dell’avamposto, ondate, assalto e riavvio. I test del secondo livello coprono inoltre conquista fra tre fazioni, depositi multipli, limite 24 con prenotazioni, attacchi fra rivali, ondate alternate, eliminazione dei fronti e passaggio fra livelli. Usano una simulazione accelerata in una VM; le interazioni e il disegno richiedono anche una prova nel browser.
+I test verificano raccolta ed esaurimento, arrivi diagonali e raccolta prolungata, prenotazione della popolazione, code e rimborsi, ritirata, mantenimento posizione, attacchi a distanza, danni ad area, conquista e perdita dell’avamposto, ondate, assalto e riavvio. I test dei livelli successivi coprono inoltre conquista fra tre fazioni, depositi multipli, limite 24 con prenotazioni, attacchi fra rivali, ondate alternate, eliminazione dei fronti e passaggio fra livelli. Per l’assedio verificano anche bonus distinti delle torri, scudo dinamico, tiro della Guardia, contrattacchi annunciati, limite 28 e vittoria con un esercito preparato. Usano una simulazione accelerata in una VM; le interazioni e il disegno richiedono anche una prova nel browser.
 
 `rules.js` raccoglie costi, statistiche e le configurazioni `RTS_LEVELS` (mappe, popolazione, risorse, avamposti e fortezze) per facilitare il bilanciamento. `game.js` gestisce simulazione, comandi e Canvas. La diagnostica `window.__rtsDebug.snapshot()` restituisce solo un riepilogo dello stato.
 
-Il progetto resta single-player con due mappe fisse, movimento diretto e IA a ondate. Ricerca dei percorsi intorno agli ostacoli, nebbia di guerra, salvataggi e multiplayer sono sviluppi futuri. Il bilanciamento può essere ulteriormente affinato con partite reali.
+Il progetto resta single-player con tre mappe fisse, movimento diretto e IA a ondate. Ricerca dei percorsi intorno agli ostacoli, nebbia di guerra, salvataggi e multiplayer sono sviluppi futuri. Il bilanciamento può essere ulteriormente affinato con partite reali.
 
 ```text
 terre-di-confine/

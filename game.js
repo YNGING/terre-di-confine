@@ -13,7 +13,7 @@
     units: [], buildings: [], nodes: [], decorations: [], particles: [],
     selected: [], camera: { x: 0, y: 0 }, width: 900, height: 600,
     pointer: null, mouse: { x: 0, y: 0 }, keys: new Set(),
-    toastUntil: 0, lastHud: -1, idSequence: 0, effects: [], outpost: null, outposts: [], postIndex: 0, nextLevel: false,
+    toastUntil: 0, lastHud: -1, idSequence: 0, effects: [], outpost: null, outposts: [], postIndex: 0, nextLevel: false, wavePlan: null,
     stats: { killed: 0, trained: 0, gathered: 0 }
   };
   const uid = () => ++state.idSequence;
@@ -32,14 +32,17 @@
   const isUnit = (entity) => !!entity && !!RULES.units[entity.type];
   const reservedPopulation = () => state.buildings.filter(alive).reduce((sum, b) => sum + b.queue.length, 0);
   const canRecruit = (price) => canPay(price) && playerUnits().length + reservedPopulation() < state.popCap;
-  const ownsOutpost = () => state.outposts.some(p => p.owner === 'player');
+  const canTrainMage = () => state.outposts.some(p => p.owner === 'player' && (!p.role || p.role === 'arcane'));
+  const usableDepot = p => p.owner === 'player' && !p.contested && (!p.role || p.role === 'market');
+  const citadelShield = () => level.shieldPerTower ? state.outposts.filter(p => isEnemy(p.owner)).length * level.shieldPerTower : 0;
   const isEnemy = team => team === 'enemy' || team === 'enemy2';
-  const teamName = team => team === 'player' ? 'Alleato' : team === 'neutral' ? 'Neutrale' : level.enemies.find(e => e.team === team)?.name || 'Nemico';
+  const teamName = team => team === 'player' ? 'Alleato' : team === 'neutral' ? 'Neutrale' : level.factionName || level.enemies.find(e => e.team === team)?.name || 'Nemico';
   const teamColor = team => team === 'player' ? '#91d6b8' : team === 'enemy2' ? '#c49aed' : team === 'enemy' ? '#e98b7b' : '#dfcb8e';
-  const waveFront = () => level.enemies[level.id === 2 && state.wave >= 3 && state.wave % 2 === 1 ? 1 : 0];
+  const waveFront = () => level.enemies[level.waveOrder ? level.waveOrder[(state.wave - 1) % level.waveOrder.length] : level.id === 2 && state.wave >= 3 && state.wave % 2 === 1 ? 1 : 0];
+  const frontHome = front => state.buildings.find(b => b.frontIndex === level.enemies.indexOf(front));
   const spend = (price) => { if (!canPay(price)) return false; state.wood -= price.wood; state.gold -= price.gold; return true; };
   const keep = (team) => state.buildings.find(b => b.type === 'keep' && b.team === team);
-  const named = (entity) => `${TYPE_NAMES[entity.type] || entity.type}${isEnemy(entity.team) ? ` · ${teamName(entity.team)}` : ''}`;
+  const named = (entity) => `${entity.frontName || TYPE_NAMES[entity.type] || entity.type}${isEnemy(entity.team) ? ` · ${teamName(entity.team)}` : ''}`;
 
   function createUnit(type, team, x, y, order = null) {
     const c = RULES.units[type], u = { id: uid(), type, team, x, y, hp: c.hp, maxHp: c.hp,
@@ -49,7 +52,7 @@
     return u;
   }
   function createBuilding(type, team, x, y, progress = 1) {
-    const hp = type === 'keep' ? (isEnemy(team) ? level.enemyHp : 1000) : 360;
+    const hp = type === 'keep' ? (isEnemy(team) ? level.enemyHp : 1000) : type === 'camp' ? level.campHp : 360;
     const b = { id: uid(), type, team, x, y, hp: Math.max(75, hp * progress),
       maxHp: hp, progress, queue: [], rally: null, cooldown: 0 };
     state.buildings.push(b);
@@ -63,22 +66,26 @@
   function resetWorld(levelId = level.id) {
     level = window.RTS_LEVELS.find(l => l.id === levelId) || window.RTS_LEVELS[0];
     W = level.width; H = level.height;
-    state.nextLevel = false; state.postIndex = 0;
+    state.nextLevel = false; state.postIndex = 0; state.wavePlan = null;
     state.idSequence = 0; state.wood = 200; state.gold = 110; state.time = 0;
     state.wave = 1; state.waveIn = level.firstWave; state.running = false; state.ended = false;
     state.mode = 'select'; state.units = []; state.buildings = []; state.nodes = [];
     state.particles = []; state.effects = []; state.selected = []; state.toastUntil = 0;
     state.pointer = null; state.keys.clear(); state.popCap = level.population;
     state.outposts = level.posts.map((p, i) => ({ ...RULES.outpost, ...p, id: `post-${i}`,
-      type: 'outpost', control: 0, owner: 'neutral', capturingTeam: null, contested: false, incomeClock: 0 }));
+      type: 'outpost', control: p.initialOwner ? -1 : 0, owner: p.initialOwner || 'neutral',
+      capturingTeam: p.initialOwner || null, contested: false, incomeClock: 0, cooldown: 0 }));
     state.outpost = state.outposts[0]; // First post remains the level-1 diagnostic alias.
     $('dragBox').classList.add('hidden');
     state.stats = { killed: 0, trained: 0, gathered: 0 }; state.lastHud = -1;
     const [x, y] = level.player;
     createBuilding('keep', 'player', x, y);
     for (const e of level.enemies) {
-      createBuilding('keep', e.team, e.x, e.y);
-      for (const [type, dx, dy] of [['raider', -113, -86], ['raider', -110, 97], ['archer', -20, 55]]) {
+      const b = createBuilding(e.type || 'keep', e.team, e.x, e.y);
+      b.frontIndex = level.enemies.indexOf(e);
+      if (level.id === 3) b.frontName = e.name;
+      const guards = [['raider', -113, -86], ['raider', -110, 97], ['archer', -20, 55]];
+      for (const [type, dx, dy] of e.type === 'camp' ? guards.slice(0, 2) : guards) {
         createUnit(type, e.team, e.x + dx, e.y + dy, { type: 'guard', x: e.x + dx, y: e.y + dy });
       }
     }
@@ -97,6 +104,7 @@
     centerCamera(x + (state.width < 800 ? 20 : 230), y - 5);
     $('placementNotice').classList.add('hidden');
     $('cancelOrderBtn').classList.add('hidden');
+    $('conquestGuide').textContent = level.id === 3 ? 'Mercato: oro e deposito. Arcana: maghi. Guardia: frecce. Ogni torre sottratta al nemico riduce lo scudo della cittadella del 20%.' : 'Costruisci la caserma (B). Armigero: R, arciere: Q, mago: E. Tieni truppe nell’avamposto per sbloccare i maghi.';
     updateHud();
   }
   function centerCamera(x, y) {
@@ -143,14 +151,16 @@
     $('population').title = 'Unità vive + posti prenotati in coda';
     $('timer').textContent = fmtTime(state.time);
     const front = waveFront();
-    $('waveText').textContent = `${level.id === 2 ? (alive(keep(front.team)) ? front.name.toUpperCase() : 'TREGUA') + ' · ' : ''}ONDATA ${state.wave} · ${Math.ceil(Math.max(0, state.waveIn))}s`;
+    $('waveText').textContent = `${level.id > 1 ? (alive(frontHome(front)) ? front.name.toUpperCase() : 'TREGUA') + ' · ' : ''}ONDATA ${state.wave} · ${Math.ceil(Math.max(0, state.waveIn))}s`;
+    const plan = state.wavePlan, announcedPost = state.outposts.find(p => p.id === plan?.postId);
+    $('waveNotice').textContent = plan?.counter && alive(frontHome(front)) ? `Contrattacco: ${announcedPost.name}` : '';
     const remaining = state.buildings.filter(b => b.type === 'keep' && isEnemy(b.team) && alive(b)).length;
-    $('objectiveText').textContent = level.id === 1 ? 'Distruggi la fortezza nemica' : `Distruggi le fortezze rivali · ${2 - remaining}/2`;
+    $('objectiveText').textContent = level.id === 3 ? `Cittadella · scudo ${Math.round(citadelShield()*100)}% · campi attivi ${state.buildings.filter(b => b.type === 'camp' && alive(b)).length}/2` : level.id === 1 ? 'Distruggi la fortezza nemica' : `Distruggi le fortezze rivali · ${2 - remaining}/2`;
     $('levelLabel').textContent = `LIVELLO ${level.id} · ${level.name.toUpperCase()}`;
     const post = state.selected.length === 1 && state.selected[0].type === 'outpost' ? state.selected[0] : state.outposts[state.postIndex];
     const ownerLabel = teamName(post.owner);
-    $('outpostStatus').textContent = `${level.id === 2 ? `Avamposti ${state.outposts.filter(p => p.owner === 'player').length}/3 · ${post.name.replace('Avamposto ', '')}` : 'Avamposto'}: ${post.contested ? 'conteso' : ownerLabel.toLowerCase()} · ${Math.round(Math.abs(post.control) * 100)}%`;
-    $('outpostStatus').title = level.id === 2 ? 'Clicca per scorrere e selezionare i tre avamposti' : 'Centra e seleziona l’avamposto';
+    $('outpostStatus').textContent = `${level.id > 1 ? `${level.id === 3 ? 'Torri' : 'Avamposti'} ${state.outposts.filter(p => p.owner === 'player').length}/3 · ${post.name.replace(/^(Avamposto|Torre) /, '')}` : 'Avamposto'}: ${post.contested ? 'conteso' : ownerLabel.toLowerCase()} · ${Math.round(Math.abs(post.control) * 100)}%`;
+    $('outpostStatus').title = level.id > 1 ? 'Clicca per scorrere e selezionare i tre punti di controllo' : 'Centra e seleziona l’avamposto';
     $('outpostStatus').dataset.owner = post.contested ? 'contested' : post.owner;
     $('idleBtn').textContent = `⚒ Inattivi: ${playerUnits().filter(u => u.type === 'worker' && !u.order).length}`;
     const sel = selectedAlive(), first = sel[0];
@@ -159,14 +169,14 @@
     let cmd = '', badges = '';
     if (!sel.length) {
       title.textContent = 'Nessuna selezione';
-      description.textContent = level.id === 1 ? 'Sviluppa la base e conquista l’avamposto centrale per ottenere oro e reclutare maghi.' : 'Conquista gli avamposti per oro e depositi. Ne basta uno per reclutare maghi. Rossi e Viola sono rivali: elimina entrambe le fortezze.';
+      description.textContent = level.id === 3 ? 'Conquista le torri per indebolire lo scudo. Distruggi gli accampamenti per fermare i rinforzi. La caduta della cittadella conclude l’assedio.' : level.id === 1 ? 'Sviluppa la base e conquista l’avamposto centrale per ottenere oro e reclutare maghi.' : 'Conquista gli avamposti per oro e depositi. Ne basta uno per reclutare maghi. Rossi e Viola sono rivali: elimina entrambe le fortezze.';
       hint.textContent = 'Clic: seleziona · clic destro: ordina · G: esercito · I: contadino inattivo';
     } else if (first.type === 'outpost' && sel.length === 1) {
       title.textContent = post.name;
-      description.textContent = `Mantieni truppe nel cerchio per conquistarlo. Offre ${post.gold} oro ogni ${post.incomeTime}s, deposito risorse e accesso ai maghi.`;
+      description.textContent = post.bonus || `Mantieni truppe nel cerchio per conquistarlo. Offre ${post.gold} oro ogni ${post.incomeTime}s, deposito risorse e accesso ai maghi.`;
       badges = `<span class="stat-pill">${ownerLabel} · ${Math.round(Math.abs(post.control) * 100)}%</span>`;
-      if (post.contested) badges += '<span class="stat-pill">Conteso: rendita e deposito sospesi</span>';
-      hint.textContent = 'Solo le unità militari conquistano. Il nemico può riprenderlo; i maghi già in coda restano disponibili.';
+      if (post.contested) badges += `<span class="stat-pill">${post.role === 'guard' ? 'Contesa: tiro sospeso' : post.role === 'arcane' ? 'Contesa: conquista sospesa' : 'Conteso: rendita e deposito sospesi'}</span>`;
+      hint.textContent = level.id === 3 ? 'Solo i combattenti conquistano: 12s per neutralizzare, poi 12s per ottenere il controllo. Ogni torre nemica riduce i danni alla cittadella del 20%.' : 'Solo le unità militari conquistano. Il nemico può riprenderlo; i maghi già in coda restano disponibili.';
     } else if (sel.length > 1) {
       title.textContent = `${sel.length} elementi selezionati`;
       description.textContent = 'Sposta il gruppo, avanza combattendo o mantieni la posizione.';
@@ -193,7 +203,7 @@
         if (friendly && u.type === 'worker') cmd += commandButton('build', 'Costruisci caserma', '110 legno · 45 oro · B', '⌂', !canPay(COST.barracks));
         hint.textContent = u.order?.type === 'hold' ? 'Mantiene la posizione: attacca solo a portata, senza inseguire.' : 'Clic destro: ordine contestuale · F: avanza combattendo · X: mantieni';
       } else {
-        description.textContent = u.type === 'keep'
+        description.textContent = u.type === 'camp' ? 'Accampamento di rinforzi. Distruggilo per eliminare le sue ondate: i suoi turni resteranno vuoti.' : level.id === 3 && u.type === 'keep' && isEnemy(u.team) ? `Cittadella: scudo ${Math.round(citadelShield()*100)}%. Ogni torre nemica riduce i danni del 20%; neutralizzala o conquistala per indebolire la protezione.` : u.type === 'keep'
           ? 'Il castello difende la zona con frecce automatiche e recluta contadini.'
           : 'Recluta armigeri, arcieri e maghi. Ogni edificio può accodare fino a 5 unità.';
         if (u.type === 'barracks' && u.progress < 1) badges += `<span class="stat-pill">Costruzione: ${Math.floor(u.progress * 100)}%</span>`;
@@ -201,9 +211,9 @@
           const types = u.type === 'keep' ? ['worker'] : ['soldier', 'archer', 'mage'];
           for (const type of types) {
             const c = COST[type], shortcut = { worker: 'R', soldier: 'R', archer: 'Q', mage: 'E' }[type];
-            const locked = type === 'mage' && !ownsOutpost();
+            const locked = type === 'mage' && !canTrainMage();
             cmd += commandButton(`recruit-${type}`, `Recluta ${TYPE_NAMES[type].toLowerCase()}`,
-              locked ? 'Conquista l’avamposto per sbloccare' : `${c.wood} legno · ${c.gold} oro · ${RULES.units[type].trainTime}s · ${shortcut}`,
+              locked ? (level.id === 3 ? 'Conquista la Torre arcana' : 'Conquista l’avamposto per sbloccare') : `${c.wood} legno · ${c.gold} oro · ${RULES.units[type].trainTime}s · ${shortcut}`,
               { worker: '⚒', soldier: '⚔', archer: '➶', mage: '✧' }[type],
               locked || u.progress < 1 || u.queue.length >= RULES.queueLimit || !canRecruit(c));
           }
@@ -264,7 +274,7 @@
     if (!state.running || state.ended || !COST[type] || !RULES.units[type]) return;
     const b = selectedAlive()[0], expected = type === 'worker' ? 'keep' : 'barracks';
     if (!b || b.team !== 'player' || b.type !== expected || b.progress < 1) return;
-    if (type === 'mage' && !ownsOutpost()) { toast('Conquista l’avamposto per reclutare i maghi.'); return; }
+    if (type === 'mage' && !canTrainMage()) { toast(level.id === 3 ? 'Conquista la Torre arcana per reclutare i maghi.' : 'Conquista l’avamposto per reclutare i maghi.'); return; }
     if (b.queue.length >= RULES.queueLimit) { toast('La coda di questo edificio è piena.'); return; }
     if (playerUnits().length + reservedPopulation() >= state.popCap) { toast('Popolazione al limite, inclusi i posti prenotati.'); return; }
     if (!spend(COST[type])) { toast('Non hai abbastanza risorse.'); return; }
@@ -361,7 +371,7 @@
       army.filter(u => u.type === 'worker').forEach(u => { u.order = { type: 'build', targetId: target.id }; });
       toast('Contadini inviati a costruire.'); return;
     }
-    if ((target?.type === 'keep' && target.team === 'player') || (target?.type === 'outpost' && target.owner === 'player' && !target.contested)) {
+    if ((target?.type === 'keep' && target.team === 'player') || (target?.type === 'outpost' && usableDepot(target))) {
       const carriers = army.filter(u => u.type === 'worker' && u.carry);
       carriers.forEach(u => { u.order = { type: 'deposit' }; });
       if (carriers.length === army.length) return;
@@ -404,10 +414,12 @@
   }
   function damage(victim, amount, attackerTeam = null) {
     if (!alive(victim)) return;
+    if (level.id === 3 && victim.type === 'keep' && isEnemy(victim.team)) amount *= 1 - citadelShield();
     victim.hp = Math.max(0, victim.hp - amount);
     if (!alive(victim)) {
       burst(victim.x, victim.y, '#f9c17a', 18, .9);
       if (attackerTeam === 'player' && isEnemy(victim.team) && isUnit(victim)) state.stats.killed++;
+      if (victim.type === 'camp') toast(`${victim.frontName} distrutto: rinforzi interrotti da questo campo!`);
       if (victim.queue) victim.queue = []; // Destruction releases reserved population.
       if (victim.type === 'keep') {
         if (victim.team === 'player') finish(false);
@@ -445,7 +457,7 @@
   }
   function depositCargo(u, dt) {
     const destinations = state.buildings.filter(b => b.type === 'keep' && b.team === 'player' && alive(b));
-    destinations.push(...state.outposts.filter(p => p.owner === 'player' && !p.contested));
+    destinations.push(...state.outposts.filter(usableDepot));
     const home = destinations.sort((a, b) => dist(u, a) - dist(u, b))[0];
     if (!home || !moveTo(u, home, home.type === 'keep' ? 79 : 52, dt)) return false;
     if (u.carry) {
@@ -567,15 +579,27 @@
       }
       if (oldOwner !== p.owner) {
         p.incomeClock = 0;
-        toast(p.owner === 'player' ? `${p.name} conquistato! Maghi sbloccati, +${p.gold} oro ogni ${p.incomeTime}s.` : `${p.name}: ${teamName(p.owner).toLowerCase()}.`);
+        toast(p.owner === 'player' ? (p.bonus ? `${p.name} conquistata! ${p.bonus}` : `${p.name} conquistato! Maghi sbloccati, +${p.gold} oro ogni ${p.incomeTime}s.`) : `${p.name}: ${teamName(p.owner).toLowerCase()}.`);
       }
-      if (p.owner === 'player' && !p.contested) {
+      if (p.owner === 'player' && !p.contested && p.gold > 0) {
         p.incomeClock += dt;
         if (p.incomeClock >= p.incomeTime) {
           p.incomeClock -= p.incomeTime; state.gold += p.gold;
           floating(p.x, p.y - 95, `+${p.gold} oro`, '#ebcc7a');
         }
       }
+    }
+  }
+  function updateTowerDefenses(dt) {
+    for (const p of state.outposts) {
+      if (p.role !== 'guard') continue;
+      p.cooldown = Math.max(0, p.cooldown - dt);
+      if (p.contested || p.owner === 'neutral' || p.cooldown > 0) continue;
+      const target = state.units.filter(u => alive(u) && u.team !== p.owner && dist(u, p) <= p.range)
+        .sort((a, b) => dist(a, p) - dist(b, p))[0];
+      if (!target) continue;
+      p.cooldown = p.attackTime;
+      damage(target, p.damage, p.owner); attackEffect(p, target, 'arrow');
     }
   }
   function updateDefenses(dt) {
@@ -589,29 +613,40 @@
       b.cooldown = 1.5; damage(enemies[0], isEnemy(b.team) ? 14 : 10, b.team); attackEffect(b, enemies[0], 'arrow');
     }
   }
+  function planWave() {
+    const front = waveFront();
+    const held = state.outposts.filter(p => p.owner === 'player');
+    // Counterattacks replace the citadel's normal wave, never add another clock.
+    const counter = level.id === 3 && !front.type && state.wave >= 3 && held.length > 0;
+    const post = counter ? held[(Math.floor(state.wave / 3) - 1) % held.length] : state.outposts[front.post];
+    const viaOutpost = counter || (level.id === 1 ? state.wave % 2 === 0 : state.wave % 4 >= 2);
+    return { counter, postId: post.id, viaOutpost };
+  }
   function startWave() {
-    const front = waveFront(), home = keep(front.team);
-    // A defeated front leaves its scheduled slot empty, rewarding the first siege.
+    const front = waveFront(), home = frontHome(front), plan = state.wavePlan || planWave();
+    // A defeated front leaves its scheduled slot empty, rewarding each siege.
     if (alive(home)) {
-      const troops = Math.min(level.waveCap, 1 + state.wave);
-      const viaOutpost = level.id === 1 ? state.wave % 2 === 0 : state.wave % 4 >= 2;
+      const cap = front.type === 'camp' ? 5 : level.waveCap;
+      const troops = Math.min(cap, 1 + state.wave);
       for (let i = 0; i < troops; i++) {
-        const type = state.wave >= 6 && i === troops - 1 ? 'mage' : state.wave >= 3 && i % 3 === 2 ? 'archer' : 'raider';
+        const type = state.wave >= 6 && front.type !== 'camp' && i === troops - 1 ? 'mage' : state.wave >= 3 && i % 3 === 2 ? 'archer' : 'raider';
         createUnit(type, front.team, home.x - 110 - (i % 3) * 25, home.y + (i - (troops - 1) / 2) * 34,
-          { type: 'raid', targetId: keep('player').id, viaOutpost, postId: state.outposts[front.post].id });
+          { type: 'raid', targetId: keep('player').id, viaOutpost: plan.viaOutpost, postId: plan.postId, sourceId: home.id });
       }
-      toast(`Ondata ${state.wave}: ${troops} ${front.name.toLowerCase()} ${viaOutpost ? 'verso l’avamposto' : 'verso il castello'}!`);
-    } else toast(`Il fronte dei ${front.name} è caduto: tempo per riorganizzarsi.`);
-    state.wave++; state.waveIn = Math.max(38, 65 - state.wave * 2);
+      const target = state.outposts.find(p => p.id === plan.postId);
+      toast(plan.counter ? `Contrattacco della cittadella: ${troops} nemici verso ${target.name}!` : `Ondata ${state.wave}: ${troops} nemici da ${front.name}, verso ${plan.viaOutpost ? target.name : 'il castello'}!`);
+    } else toast(`${front.name}: fronte eliminato, tempo per riorganizzarsi.`);
+    state.wave++; state.waveIn = Math.max(level.id === 3 ? 42 : 38, 65 - state.wave * 2);
+    state.wavePlan = null;
   }
   function finish(won) {
     if (state.ended) return;
-    state.ended = true; state.running = false; state.nextLevel = won && level.id === 1; cancelBuild();
+    state.ended = true; state.running = false; state.nextLevel = won && level.id < window.RTS_LEVELS.length; cancelBuild();
     $('levelPicker').classList.add('hidden');
     $('chooseLevelBtn').classList.remove('hidden');
     $('modalTitle').textContent = won ? 'Il regno è salvo!' : 'Il castello è caduto';
     $('modalSubtitle').textContent = won
-      ? `Vittoria in ${fmtTime(state.time)}! Hai distrutto ${level.id === 1 ? 'la fortezza nemica' : 'entrambe le fortezze rivali'}. Nemici sconfitti: ${state.stats.killed}. Risorse raccolte: ${state.stats.gathered}.`
+      ? `Vittoria in ${fmtTime(state.time)}! Hai distrutto ${level.id === 3 ? 'la cittadella: l’assedio è finito' : level.id === 1 ? 'la fortezza nemica' : 'entrambe le fortezze rivali'}. Nemici sconfitti: ${state.stats.killed}. Risorse raccolte: ${state.stats.gathered}.`
       : `La fortezza nemica ha trionfato. Hai resistito ${fmtTime(state.time)} e sconfitto ${state.stats.killed} nemici. Puoi riprovare con una strategia diversa.`;
     $('modalGuide').classList.add('hidden');
     $('modalButton').innerHTML = state.nextLevel ? 'Livello successivo <span aria-hidden="true">→</span>' : 'Riprova il livello <span aria-hidden="true">↻</span>';
@@ -625,6 +660,13 @@
     moveCamera(((k.has('d') || k.has('ArrowRight')) ? speed : 0) - ((k.has('a') || k.has('ArrowLeft')) ? speed : 0),
       ((k.has('s') || k.has('ArrowDown')) ? speed : 0) - ((k.has('w') || k.has('ArrowUp')) ? speed : 0));
     state.waveIn -= dt;
+    if (level.warningTime && !state.wavePlan && state.waveIn <= level.warningTime) {
+      state.wavePlan = planWave();
+      if (state.wavePlan.counter && alive(frontHome(waveFront()))) {
+        const target = state.outposts.find(p => p.id === state.wavePlan.postId);
+        toast(`Contrattacco fra ${Math.ceil(Math.max(0, state.waveIn))}s: difendi ${target.name}!`);
+      }
+    }
     if (state.waveIn <= 0) startWave();
     updateTraining(dt);
     updateDefenses(dt);
@@ -653,6 +695,7 @@
     }
     state.units = state.units.filter(u => alive(u));
     updateOutpost(dt);
+    updateTowerDefenses(dt);
     for (const effect of state.effects) effect.life -= dt;
     state.effects = state.effects.filter(effect => effect.life > 0);
     for (const p of state.particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; p.vy += (p.label ? -7 : 55) * dt; }
@@ -798,7 +841,19 @@
       ellipse(b.x,b.y+10,b.type==='keep'?80:65,b.type==='keep'?50:44,'#e2cb7670');
       ellipse(b.x,b.y+10,b.type==='keep'?74:60,b.type==='keep'?46:40,'#3c6f4b79');
     }
+    if (level.id === 3 && b.type === 'keep' && isEnemy(b.team) && citadelShield() > 0) {
+      ctx.strokeStyle = '#b9a2ed';ctx.lineWidth = 3;ctx.setLineDash([10,6]);
+      ctx.beginPath();ctx.ellipse(b.x,b.y-25,105,120,0,0,TWO_PI);ctx.stroke();ctx.setLineDash([]);
+    }
     if(b.type==='keep')drawKeep(b);else drawBarracks(b);
+    if (b.frontName) {
+      ctx.font='bold 11px system-ui';ctx.fillStyle='#f4d5ac';ctx.textAlign='center';
+      ctx.fillText(b.frontName.toUpperCase(),b.x,b.y+66);
+    }
+    if (b.type === 'camp') {
+      ctx.strokeStyle='#c4674b';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(b.x+35,b.y-35);ctx.lineTo(b.x+35,b.y-95);ctx.stroke();
+      ctx.fillStyle='#c4674b';ctx.fillRect(b.x+35,b.y-95,28,17);
+    }
     if(b.hp<b.maxHp || b.progress<1) drawHealth(b,b.x,b.y-(b.type==='keep'?138:75),b.type==='keep'?88:70);
   }
   function drawUnit(u) {
@@ -869,7 +924,11 @@
     roundedRect(p.x - 46, p.y + 37, 92, 7, 3, '#22352d');
     roundedRect(p.x - 46, p.y + 37, 92 * Math.abs(p.control), 7, 3, teamColor(p.owner !== 'neutral' ? p.owner : p.capturingTeam));
     ctx.font = 'bold 11px system-ui'; ctx.fillStyle = '#f4e6bd'; ctx.textAlign = 'center';
-    ctx.fillText(p.contested ? 'AVAMPOSTO CONTESO' : p.name.toUpperCase(), p.x, p.y + 62);
+    ctx.fillText(p.contested ? (p.role ? 'TORRE CONTESA' : 'AVAMPOSTO CONTESO') : p.name.toUpperCase(), p.x, p.y + 62);
+    if (p.role) {
+      ctx.font='bold 21px Georgia';ctx.fillStyle=color;
+      ctx.fillText({market:'◆',arcane:'✧',guard:'➶'}[p.role],p.x,p.y-28);
+    }
     ctx.restore();
   }
   function drawEffects() {
@@ -941,10 +1000,15 @@
       mctx.fillStyle = p.contested ? '#ffcd7e' : teamColor(p.owner);
       mctx.beginPath();mctx.moveTo(p.x*sx,p.y*sy-6);mctx.lineTo(p.x*sx+6,p.y*sy);mctx.lineTo(p.x*sx,p.y*sy+6);mctx.lineTo(p.x*sx-6,p.y*sy);mctx.closePath();mctx.fill();
     }
-    const next = keep(waveFront().team);
-    if (level.id === 2 && alive(next)) {
+    const next = frontHome(waveFront());
+    if (level.id > 1 && alive(next)) {
       mctx.strokeStyle = teamColor(next.team); mctx.lineWidth = 2;
       mctx.beginPath(); mctx.arc(next.x*sx, next.y*sy, 8 + Math.sin(state.time*3)*2, 0, TWO_PI); mctx.stroke();
+    }
+    if (state.wavePlan?.counter) {
+      const p = state.outposts.find(p => p.id === state.wavePlan.postId);
+      mctx.strokeStyle='#ffcd7e';mctx.lineWidth=2;
+      mctx.strokeRect(p.x*sx-9,p.y*sy-9,18,18);
     }
     mctx.strokeStyle='#f4e6b8';mctx.lineWidth=1.5;
     mctx.strokeRect(state.camera.x*sx,state.camera.y*sy,Math.min(mw,state.width*sx),Math.min(mh,state.height*sy));
@@ -970,19 +1034,19 @@
   }
 
   function startGame() {
-    if(state.ended)resetWorld(state.nextLevel ? 2 : level.id);
+    if(state.ended)resetWorld(state.nextLevel ? level.id + 1 : level.id);
     $('levelPicker').classList.add('hidden');
     state.running=true;state.ended=false;
     $('modal').classList.add('hidden');
     canvas.focus({preventScroll:true});
-    toast(state.time > 0 ? 'Partita ripresa.' : 'Raccogli risorse, prepara l’esercito e conquista l’avamposto.');
+    toast(state.time > 0 ? 'Partita ripresa.' : level.id === 3 ? 'Le tre torri proteggono la cittadella. Conquista il Mercato per sostenere l’assedio.' : 'Raccogli risorse, prepara l’esercito e conquista l’avamposto.');
   }
   function openHelp() {
     state.running=false;state.keys.clear();
     $('levelPicker').classList.add('hidden');
     $('chooseLevelBtn').classList.remove('hidden');
     $('modalTitle').textContent='Come si gioca';
-    $('modalSubtitle').textContent='Partita in pausa. Conquista almeno un avamposto per reclutare maghi e depositare risorse. Ogni avamposto alleato e non conteso produce oro. Proteggi le unità a distanza con gli armigeri.';
+    $('modalSubtitle').textContent=level.id === 3 ? 'Partita in pausa. ' + level.description + ' I contrattacchi sono annunciati 20 secondi prima sulla minimappa.' : 'Partita in pausa. Conquista almeno un avamposto per reclutare maghi e depositare risorse. Ogni avamposto alleato e non conteso produce oro. Proteggi le unità a distanza con gli armigeri.';
     $('modalGuide').classList.remove('hidden');
     $('modalButton').innerHTML='Torna alla partita <span aria-hidden="true">→</span>';
     $('modal').classList.remove('hidden');
@@ -1104,6 +1168,6 @@
   }
   resize();restart();setupInput();requestAnimationFrame(frame);
   // Expose a tiny read-only diagnostic surface for automated smoke tests.
-  Object.defineProperty(window,'__rtsDebug',{value:{snapshot:()=>({level:level.id,width:W,height:H,popCap:state.popCap,fortresses:state.buildings.filter(b=>b.type==='keep'&&isEnemy(b.team)&&alive(b)).length,outposts:state.outposts.map(p=>({name:p.name,owner:p.owner,contested:p.contested})),camera:{...state.camera},running:state.running,ended:state.ended,time:state.time,wood:state.wood,gold:state.gold,units:state.units.length,buildings:state.buildings.length,wave:state.wave,reserved:reservedPopulation(),outpost:state.outpost.owner,selected:state.selected.map(u=>u.type)})},configurable:false});
+  Object.defineProperty(window,'__rtsDebug',{value:{snapshot:()=>({level:level.id,width:W,height:H,popCap:state.popCap,shield:Math.round(citadelShield()*100),camps:state.buildings.filter(b=>b.type==='camp'&&alive(b)).length,waveIn:state.waveIn,counterTarget:state.wavePlan?.counter?state.wavePlan.postId:null,fortresses:state.buildings.filter(b=>b.type==='keep'&&isEnemy(b.team)&&alive(b)).length,outposts:state.outposts.map(p=>({name:p.name,owner:p.owner,contested:p.contested})),camera:{...state.camera},running:state.running,ended:state.ended,time:state.time,wood:state.wood,gold:state.gold,units:state.units.length,buildings:state.buildings.length,wave:state.wave,reserved:reservedPopulation(),outpost:state.outpost.owner,selected:state.selected.map(u=>u.type)})},configurable:false});
 })();
 
