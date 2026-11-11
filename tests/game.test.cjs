@@ -28,7 +28,7 @@ function game(level = 1) {
   const anchor = '  // Expose a tiny read-only diagnostic surface for automated smoke tests.';
   assert.ok(source.includes(anchor), 'test injection anchor exists');
   vm.runInContext(source.replace(anchor,
-    '  globalThis.testGame = {state, createUnit, createBuilding, resetWorld, keep, select, recruit, cancelTraining, reservedPopulation, orderUnits, update, updateWorker, updateFighter, updateOutpost, updateTraining, performAttack, damage, startWave, depositCargo, dispatchCommand, startGame, restart, finish, validBuild, citadelShield, updateTowerDefenses, planWave, frontHome, waveFront};\n' + anchor), sandbox);
+    '  globalThis.testGame = {state, createUnit, createBuilding, resetWorld, keep, select, recruit, cancelTraining, reservedPopulation, orderUnits, update, updateWorker, updateFighter, updateOutpost, updateTraining, performAttack, damage, startWave, depositCargo, dispatchCommand, startGame, restart, finish, validBuild, citadelShield, updateTowerDefenses, planWave, frontHome, waveFront, waveFronts, forgeMultiplier, updateRam, saveGroup, recallGroup, selectSameType, nearestDepot, updateDefenses};\n' + anchor), sandbox);
   const g = sandbox.testGame; g.resetWorld(level); g.state.running = true; g.elements = elements;
   g.step = (seconds, fn = g.update) => { for (let i = 0; i < Math.ceil(seconds * 60); i++) fn(1 / 60); };
   return g;
@@ -430,10 +430,10 @@ test('level two advances to the siege; destroying the citadel wins even with cam
   const g = game(2), s = g.state;
   g.damage(g.keep('enemy'), 10000); g.damage(g.keep('enemy2'), 10000);
   assert.equal(s.nextLevel, true); g.startGame(); assert.equal(s.popCap, 28);
-  g.damage(g.keep('enemy'), 10000, 'player'); assert.equal(s.ended, true); assert.equal(s.nextLevel, false);
+  g.damage(g.keep('enemy'), 10000, 'player'); assert.equal(s.ended, true); assert.equal(s.nextLevel, true);
   assert.equal(s.buildings.filter(b => b.type === 'camp' && b.hp > 0).length, 2);
   assert.match(g.elements.get('modalSubtitle').textContent, /cittadella/);
-  g.startGame(); assert.equal(s.popCap, 28); assert.equal(g.keep('enemy').hp, 1800);
+  g.restart(3); g.startGame(); assert.equal(s.popCap, 28); assert.equal(g.keep('enemy').hp, 1800);
   g.damage(g.keep('player'), 10000); assert.equal(s.ended, true); assert.equal(s.nextLevel, false);
   g.restart(1); assert.equal(s.popCap, 18); assert.equal(s.buildings.some(b => b.type === 'camp'), false);
   assert.equal(g.citadelShield(), 0); assert.equal(s.outposts[0].owner, 'neutral');
@@ -457,7 +457,7 @@ test('a prepared army within 28 population can win after capturing the towers', 
   }
   assert.equal(s.units.filter(u => u.team === 'player').length, 28);
   g.step(100); assert.equal(g.keep('enemy').hp, 0); assert.equal(s.ended, true);
-  assert.equal(s.nextLevel, false);
+  assert.equal(s.nextLevel, true);
 });
 
 test('capturing after the announcement window cannot create an unannounced counterattack', () => {
@@ -468,4 +468,174 @@ test('capturing after the announcement window cannot create an unannounced count
   const planned = s.wavePlan.postId; g.step(20);
   assert.equal(s.wave, 4);
   assert.ok(s.units.filter(u => u.order?.type === 'raid').every(u => u.order.postId === planned));
+});
+
+test('level four: four hostile towers, 60% shield, two camps, population 30 and a leaner start', () => {
+  const g = game(4), s = g.state;
+  assert.equal(s.popCap, 30); assert.equal(s.wood, 180); assert.equal(s.gold, 80);
+  assert.equal(s.outposts.length, 4); assert.ok(s.outposts.every(p => p.owner === 'enemy'));
+  assert.ok(Math.abs(g.citadelShield() - .6) < 1e-8);
+  assert.equal(s.buildings.filter(b => b.type === 'camp').length, 2); assert.equal(g.keep('enemy').hp, 2200);
+  assert.equal(s.nodes.filter(n => n.type === 'gold').length, 7);
+  s.outposts[3].owner = 'neutral';
+  assert.ok(Math.abs(g.citadelShield() - .45) < 1e-8);
+  g.damage(g.keep('enemy'), 100, 'player'); assert.ok(Math.abs(g.keep('enemy').hp - 2145) < 1e-8);
+});
+
+test('level three victory leads to level four; level four victory ends the campaign', () => {
+  const g = game(3), s = g.state;
+  g.damage(g.keep('enemy'), 10000, 'player'); assert.equal(s.nextLevel, true);
+  g.startGame(); assert.equal(s.popCap, 30); assert.equal(s.running, true);
+  g.damage(g.keep('enemy'), 10000, 'player'); assert.equal(s.ended, true); assert.equal(s.nextLevel, false);
+  assert.match(g.elements.get('modalSubtitle').textContent, /fortezza di ferro/);
+});
+
+test('the forge boosts whoever holds it, pauses when contested and changes hands on capture', () => {
+  const g = game(4), s = g.state, forge = s.outposts.find(p => p.role === 'forge');
+  assert.ok(Math.abs(g.forgeMultiplier('enemy') - 1.2) < 1e-8); assert.equal(g.forgeMultiplier('player'), 1);
+  const raider = g.createUnit('raider', 'enemy', 300, 300), target = g.createUnit('soldier', 'player', 320, 300);
+  g.performAttack(raider, target, 1 / 60); assert.ok(Math.abs(target.hp - (125 - 12)) < 1e-8);
+  forge.contested = true; assert.equal(g.forgeMultiplier('enemy'), 1); forge.contested = false;
+  // Clear the forge guards: a lone soldier neutralizes, then captures.
+  const soldier = g.createUnit('soldier', 'player', forge.x, forge.y);
+  s.units = s.units.filter(u => u === soldier || u.team === 'player');
+  g.step(24.2, g.updateOutpost);
+  assert.equal(forge.owner, 'player'); assert.ok(Math.abs(g.forgeMultiplier('player') - 1.2) < 1e-8);
+  assert.equal(g.forgeMultiplier('enemy'), 1);
+  const mage = g.createUnit('mage', 'player', 300, 300), foe = g.createUnit('raider', 'enemy', 320, 300), near = g.createUnit('raider', 'enemy', 330, 310);
+  g.performAttack(mage, foe, 1 / 60);
+  assert.ok(Math.abs(foe.hp - (90 - 36)) < 1e-8); assert.ok(Math.abs(near.hp - (90 - 18 * 1.2)) < 1e-8);
+});
+
+test('every fourth wave is a pincer from both camps; a destroyed camp leaves only its half empty', () => {
+  const g = game(4), s = g.state;
+  s.wave = 4; assert.equal(g.waveFronts().length, 2);
+  let count = s.units.length; g.startWave();
+  const camps = s.buildings.filter(b => b.type === 'camp');
+  const raid = s.units.slice(count);
+  assert.equal(raid.length, 10);
+  for (const camp of camps) assert.equal(raid.filter(u => u.order.sourceId === camp.id).length, 5);
+  assert.ok(raid.some(u => u.order.postId === s.outposts[1].id) && raid.some(u => u.order.postId === s.outposts[2].id));
+  s.wave = 16; g.damage(camps[0], 10000, 'player'); count = s.units.length; g.startWave();
+  assert.equal(s.units.length, count + 5);
+  assert.ok(s.units.slice(count).every(u => u.order.sourceId === camps[1].id));
+  assert.equal(s.waveIn, 36);
+});
+
+test('pincer waves are announced before they start', () => {
+  const g = game(4), s = g.state;
+  s.wave = 4; s.waveIn = 20.01; g.step(.04);
+  assert.ok(s.wavePlan); assert.equal(s.wavePlan.counter, false);
+  assert.match(g.elements.get('waveNotice').textContent, /Tenaglia: Campo nord \+ Campo sud/);
+  assert.match(g.elements.get('waveText').textContent, /CAMPO NORD \+ CAMPO SUD/);
+});
+
+test('fortress waves bring a ram from wave five; rams ignore units and batter buildings', () => {
+  const g = game(4), s = g.state;
+  s.wave = 3; let count = s.units.length; g.startWave();
+  assert.ok(!s.units.slice(count).some(u => u.type === 'ram'));
+  s.wave = 7; count = s.units.length; g.startWave();
+  const wave = s.units.slice(count);
+  assert.equal(wave.length, 8); assert.equal(wave.filter(u => u.type === 'ram').length, 1);
+  assert.equal(wave.filter(u => u.type === 'mage').length, 1);
+  const ram = g.createUnit('ram', 'enemy', 1000, 1100), soldier = g.createUnit('soldier', 'player', 1010, 1100);
+  const barracks = g.createBuilding('barracks', 'player', 1150, 1100);
+  for (let i = 0; i < 600; i++) g.updateFighter(ram, 1 / 60), ram.cooldown = Math.max(0, ram.cooldown - 1 / 60);
+  assert.equal(soldier.hp, 125); assert.ok(barracks.hp < 360);
+});
+
+test('rams halve arrow damage, cannot capture towers, and trigger a throttled alert', () => {
+  const g = game(4), s = g.state;
+  const ram = g.createUnit('ram', 'enemy', 300, 300), archer = g.createUnit('archer', 'player', 450, 300);
+  g.performAttack(archer, ram, 1 / 60, true); assert.equal(ram.hp, 320 - 6);
+  const soldier = g.createUnit('soldier', 'player', 320, 300);
+  g.performAttack(soldier, ram, 1 / 60); assert.equal(ram.hp, 320 - 6 - 16);
+  const home = g.keep('player'); ram.x = home.x + 60; ram.y = home.y; home.cooldown = 0;
+  s.units = s.units.filter(u => u === ram); const before = ram.hp; g.updateDefenses(.01);
+  assert.equal(ram.hp, before - 5);
+  const market = s.outposts[0]; market.owner = 'player'; market.control = 1;
+  s.units = [g.createUnit('ram', 'enemy', market.x, market.y)];
+  g.step(30, g.updateOutpost); assert.equal(market.owner, 'player');
+  // Alerts: one toast and minimap ping per kind every 10 seconds.
+  s.time = 50; g.damage(home, 5, 'enemy'); g.damage(home, 5, 'enemy');
+  assert.equal(s.pings.length, 1); assert.match(g.elements.get('toast').textContent, /castello è sotto attacco/);
+  g.damage(home, 5, 'enemy2'); assert.equal(s.pings.length, 1);
+  s.time = 61; g.damage(home, 5, 'enemy'); assert.equal(s.pings.length, 2);
+  g.damage(home, 5, 'player'); assert.equal(s.pings.length, 2);
+});
+
+test('ambient notices do not overwrite wave announcements', () => {
+  const g = game(1), s = g.state;
+  s.time = 10; g.startWave(); const text = g.elements.get('toast').textContent;
+  assert.match(text, /Ondata 1/);
+  const b = g.createBuilding('barracks', 'player', 700, 800);
+  b.queue.push({ type: 'soldier', remaining: 0 }); g.updateTraining(1 / 60);
+  assert.equal(g.elements.get('toast').textContent, text);
+  s.time = 15; b.queue.push({ type: 'soldier', remaining: 0 }); g.updateTraining(1 / 60);
+  assert.match(g.elements.get('toast').textContent, /Armigero pronto/);
+});
+
+test('units heal slowly near their castle only after a few seconds out of combat', () => {
+  const g = game(1), s = g.state, home = g.keep('player');
+  s.units = s.units.filter(u => u.team === 'player'); s.waveIn = 1000;
+  const near = g.createUnit('soldier', 'player', home.x + 150, home.y - 120, { type: 'hold', x: home.x + 150, y: home.y - 120 });
+  const far = g.createUnit('soldier', 'player', home.x + 600, home.y, { type: 'hold', x: home.x + 600, y: home.y });
+  g.damage(near, 60, 'enemy'); g.damage(far, 60, 'enemy');
+  g.step(3); assert.equal(near.hp, 65);
+  g.step(3); assert.ok(near.hp > 65 && near.hp < 75); assert.equal(far.hp, 65);
+  g.step(30); assert.equal(near.hp, 125); assert.equal(far.hp, 65);
+});
+
+test('a castle rally on a resource sends new workers straight to harvest', () => {
+  const g = game(1), s = g.state, home = g.keep('player'), node = s.nodes[0];
+  g.select(home); g.orderUnits(node.x, node.y);
+  assert.equal(home.rally.nodeId, node.id);
+  home.queue.push({ type: 'worker', remaining: 0 }); g.updateTraining(1 / 60);
+  const worker = s.units[s.units.length - 1];
+  assert.equal(worker.order.type, 'harvest'); assert.equal(worker.order.nodeId, node.id);
+  g.orderUnits(home.x + 300, home.y); assert.equal(home.rally.nodeId, undefined);
+  home.queue.push({ type: 'worker', remaining: 0 }); g.updateTraining(1 / 60);
+  assert.equal(s.units[s.units.length - 1].order.type, 'move');
+});
+
+test('control groups store and recall living units; double click picks visible units of one type', () => {
+  const g = game(1), s = g.state;
+  const soldiers = s.units.filter(u => u.type === 'soldier' && u.team === 'player');
+  s.selected = [...soldiers, s.units.find(u => u.team === 'enemy')]; g.saveGroup('1');
+  assert.equal(s.groups['1'].length, 2);
+  const ids = () => [...s.selected].map(u => u.id);
+  s.selected = []; g.recallGroup('1'); assert.deepEqual(ids(), [soldiers[0].id, soldiers[1].id]);
+  soldiers[0].hp = 0; g.recallGroup('1'); assert.deepEqual(ids(), [soldiers[1].id]);
+  g.recallGroup('2'); assert.deepEqual(ids(), [soldiers[1].id]);
+  const workers = s.units.filter(u => u.type === 'worker');
+  g.selectSameType(workers[0]); assert.equal(s.selected.length, workers.length);
+  assert.ok(s.selected.every(u => u.type === 'worker'));
+});
+
+test('workers deliver to the nearest usable depot', () => {
+  const g = game(2), s = g.state, post = s.outposts[0], w = s.units.find(u => u.type === 'worker');
+  w.x = post.x + 40; w.y = post.y;
+  assert.equal(g.nearestDepot(w), g.keep('player'));
+  post.owner = 'player'; assert.equal(g.nearestDepot(w), post);
+});
+
+test('starting soldiers cannot rush the iron fortress', () => {
+  const g = game(4), s = g.state;
+  const soldiers = s.units.filter(u => u.type === 'soldier' && u.team === 'player');
+  soldiers.forEach(u => u.order = { type: 'attack', targetId: g.keep('enemy').id });
+  g.step(110);
+  assert.ok(g.keep('enemy').hp > 0); assert.ok(soldiers.every(u => u.hp === 0));
+});
+
+test('a prepared army within 30 population can win level four after taking the towers', () => {
+  const g = game(4), s = g.state;
+  s.outposts.forEach(p => { p.owner = 'player'; p.control = 1; });
+  s.units = s.units.filter(u => u.team !== 'player' || u.type === 'worker');
+  for (const [type, count] of [['soldier', 16], ['archer', 8], ['mage', 3]]) {
+    for (let i = 0; i < count; i++) g.createUnit(type, 'player', 2570 - (type === 'soldier' ? 0 : 120), 880 + i * 25,
+      { type: 'attack-move', x: 3000, y: 1100 });
+  }
+  assert.equal(s.units.filter(u => u.team === 'player').length, 30);
+  g.step(110); assert.equal(g.keep('enemy').hp, 0); assert.equal(s.ended, true);
+  assert.equal(s.nextLevel, false);
 });

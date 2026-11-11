@@ -2,20 +2,22 @@
 
 Un RTS in italiano, **senza librerie esterne e senza backend**. HTML5, CSS e JavaScript con Canvas 2D: apri `index.html` oppure pubblica i file su GitHub Pages.
 
-## Tre livelli
+## Quattro livelli
 
-Il selettore iniziale permette di giocare tutti e tre i livelli. Vincendo il primo o il secondo appare **Livello successivo**; dopo una sconfitta si riprova il livello corrente. **Ricomincia** azzera il livello corrente e riapre il selettore. Da pausa o fine partita, **Scegli livello · abbandona la partita** torna al selettore azzerando la partita in corso. Non sono richiesti sblocco o salvataggi.
+Il selettore iniziale permette di giocare tutti e quattro i livelli. Vincendo uno dei primi tre appare **Livello successivo**; dopo una sconfitta si riprova il livello corrente. **Ricomincia** azzera il livello corrente e riapre il selettore. Da pausa o fine partita, **Scegli livello · abbandona la partita** torna al selettore azzerando la partita in corso. Non sono richiesti sblocco o salvataggi.
 
-| | Livello 1 · Terre di Confine | Livello 2 · La frontiera contesa | Livello 3 · L’assedio delle tre torri |
-| --- | --- | --- | --- |
-| Mappa | 2400 × 1600 | 3000 × 2000 | 3000 × 2000, nuova disposizione |
-| Popolazione massima, incluse le code | 18 | 24 | 28 |
-| Boschi / miniere | 9 / 5 | 15 / 8 | 16 / 9 |
-| Punti di controllo | 1 avamposto neutrale | 3 avamposti neutrali | 3 torri inizialmente nemiche |
-| Nemici | Rossi, fortezza da 1400 PV | Rossi e Viola, fortezze da 1200 PV | Guarnigione, cittadella da 1800 PV e due accampamenti da 650 PV |
-| Vittoria | Distruggi la fortezza rossa | Distruggi entrambe le fortezze | Distruggi la cittadella |
+| | Livello 1 · Terre di Confine | Livello 2 · La frontiera contesa | Livello 3 · L’assedio delle tre torri | Livello 4 · La marca di ferro |
+| --- | --- | --- | --- | --- |
+| Mappa | 2400 × 1600 | 3000 × 2000 | 3000 × 2000, nuova disposizione | 3400 × 2200 |
+| Popolazione massima, incluse le code | 18 | 24 | 28 | 30 |
+| Risorse iniziali (legno / oro) | 200 / 110 | 200 / 110 | 200 / 110 | 180 / 80 |
+| Boschi / miniere | 9 / 5 | 15 / 8 | 16 / 9 | 16 / 7 |
+| Punti di controllo | 1 avamposto neutrale | 3 avamposti neutrali | 3 torri inizialmente nemiche | 4 torri nemiche, Forgia inclusa |
+| Nemici | Rossi, fortezza da 1400 PV | Rossi e Viola, fortezze da 1200 PV | Guarnigione, cittadella da 1800 PV e due accampamenti da 650 PV | Legione di ferro, fortezza da 2200 PV e due accampamenti da 800 PV, arieti |
+| Ondate | Prima a 75s, intervallo minimo 38s | Prima a 75s, minimo 38s | Prima a 75s, minimo 42s | Prima a 65s, minimo 36s, tenaglie |
+| Vittoria | Distruggi la fortezza rossa | Distruggi entrambe le fortezze | Distruggi la cittadella | Distruggi la fortezza di ferro |
 
-Costi, statistiche delle unità e dotazione iniziale sono condivisi: 200 legno, 110 oro, tre contadini e due armigeri. Il primo livello conserva mappa e bilanciamento originali.
+Costi e statistiche delle unità sono condivisi; la dotazione iniziale è di tre contadini e due armigeri. Il primo livello conserva mappa e bilanciamento originali.
 
 ### La frontiera contesa
 
@@ -46,7 +48,19 @@ Per sottrarre una torre al nemico occorrono circa 12 secondi di neutralizzazione
 
 Nei turni della cittadella, dalla terza ondata, può essere annunciato un **contrattacco** contro una torre alleata: avviso 20 secondi prima, nome del bersaglio sopra la minimappa e riquadro dorato sulla torre. Il bersaglio annunciato resta fisso per quell’ondata. Il contrattacco sostituisce l’attacco normale, senza aggiungere un secondo flusso di nemici. Se il bersaglio è già tornato nemico, le truppe proseguono verso il castello. La pausa ferma anche il conto alla rovescia.
 
-Gli accampamenti e le torri sono obiettivi strategici, non requisiti obbligatori: **distruggere la cittadella basta per vincere**, anche con accampamenti ancora attivi. Perdere il proprio castello termina la partita. Dopo vittoria o sconfitta si può rigiocare il terzo livello o tornare al selettore.
+Gli accampamenti e le torri sono obiettivi strategici, non requisiti obbligatori: **distruggere la cittadella basta per vincere**, anche con accampamenti ancora attivi. Perdere il proprio castello termina la partita. Dopo la vittoria si passa al quarto livello.
+
+### La marca di ferro
+
+Il quarto livello riprende l’assedio del terzo e lo rende più duro. Si parte con meno risorse (180 legno, 80 oro) e sulla mappa ci sono solo 7 miniere. La **Legione di ferro** schiera una fortezza da 2200 PV, difesa da due guardie in più, e due accampamenti da 800 PV.
+
+- **Quattro torri, 15% di scudo ciascuna** (60% all’inizio): Mercato (10 oro ogni 8s e deposito), Arcana (maghi), Guardia (frecce) e la nuova **Forgia**, vicina alla fortezza.
+- **Forgia:** finché non è contesa, dà **+20% di danni** a tutte le unità della fazione che la controlla, compresa l’esplosione ad area dei maghi. All’inizio è nemica: le ondate colpiscono più forte finché non la strappi alla Legione. Il bonus attivo compare nella scheda dell’unità.
+- **Tenaglia:** il calendario è Campo nord, Campo sud, Fortezza, poi **entrambi i campi insieme**, e così via. La tenaglia è annunciata 20 secondi prima («Tenaglia: Campo nord + Campo sud») e i due campi sono evidenziati sulla minimappa. Se un campo è distrutto, arriva solo la metà dell’altro.
+- **Ariete:** dalla quinta ondata ogni ondata della fortezza include un ariete (320 PV, lento, 55 danni ogni 2,4s). Ignora le unità e punta all’edificio alleato più vicino. È **corazzato**: frecce di arcieri, castello e Torre di guardia gli fanno metà danni. Non conquista torri. Fermalo con armigeri e maghi.
+- Ondate fino a 12 unità dalla fortezza, intervallo minimo 36 secondi, prima ondata a 65 secondi, contrattacchi annunciati come nel terzo livello.
+
+È l’ultimo livello: dopo la vittoria si può rigiocarlo o tornare al selettore.
 
 ## Come si gioca (livello 1)
 
@@ -76,6 +90,14 @@ Il **mago** ha 58 PV e lancia automaticamente un’esplosione ogni 3 secondi: 30
 - Perdere il controllo impedisce nuovi reclutamenti di maghi. I maghi già presenti o già pagati in coda rimangono disponibili.
 - La prima ondata parte dopo 75 secondi. Le successive alternano attacchi al castello e all’avamposto; introducono arcieri dalla terza ondata e maghi dalla sesta. La minimappa mostra il conto alla rovescia della prossima ondata.
 
+### Aiuti al comando
+
+- **Cura al castello:** le unità alleate entro 260 dal proprio castello, se non subiscono danni da 4 secondi, recuperano 3 PV al secondo.
+- **Avvisi d’attacco:** quando un nemico colpisce castello, caserma o contadini compare un avviso («Il castello è sotto attacco!») e un cerchio rosso pulsa sulla minimappa. Ogni tipo di avviso si ripete al massimo ogni 10 secondi.
+- **Messaggi:** gli avvisi «unità pronta» non coprono più gli annunci di ondata, contrattacco o attacco ancora visibili.
+- **Raduno su risorse:** con il castello selezionato, clic destro su un bosco o una miniera: i nuovi contadini iniziano subito a raccogliere.
+- **Gruppi:** Ctrl+1…5 (oppure Shift+1…5) salva le unità selezionate; 1…5 le riseleziona, premendo due volte di fila la telecamera le inquadra. Il **doppio clic** su un’unità seleziona tutte quelle dello stesso tipo visibili sullo schermo.
+
 ### Ordini e controlli
 
 **Muovi** dà priorità al movimento: usalo per ritirarti. **Avanza** ingaggia i nemici lungo il percorso. **Mantieni** attacca solo i bersagli già a portata, senza inseguire. Un attacco diretto assegna un bersaglio prioritario. I contadini non ingaggiano automaticamente durante gli spostamenti.
@@ -84,6 +106,8 @@ Il **mago** ha 58 PV e lancia automaticamente un’esplosione ogni 3 secondi: 30
 | --- | --- |
 | Selezionare unità / edificio | Clic sinistro |
 | Selezionare un gruppo | Trascina il mouse; Shift + clic aggiunge alla selezione |
+| Selezionare le unità visibili dello stesso tipo | Doppio clic su un’unità |
+| Salvare / richiamare un gruppo | Ctrl (o Shift) + 1…5 / 1…5; due volte per centrare |
 | Muovere / raccogliere / attaccare / conquistare | Clic destro sulla destinazione o sul bersaglio |
 | Avanzare combattendo | Pulsante **Avanza** o F, poi clic sulla meta |
 | Mantenere la posizione | Pulsante **Mantieni** o X |
@@ -95,7 +119,7 @@ Il **mago** ha 58 PV e lancia automaticamente un’esplosione ogni 3 secondi: 30
 | Costruire la caserma | B, con un contadino selezionato |
 | Reclutare contadino / armigero | R, con castello / caserma selezionati |
 | Reclutare arciere / mago | Q / E, con caserma selezionata |
-| Punto di raduno | Clic destro con l’edificio selezionato, o pulsante dedicato e clic |
+| Punto di raduno | Clic destro con l’edificio selezionato, o pulsante dedicato e clic; dal castello, su una risorsa per la raccolta automatica |
 | Annullare l’ultima unità in coda | Pulsante nell’edificio; rimborso completo |
 | Pausa / ripresa | P oppure pulsante pausa e **Torna alla partita** |
 | Aiuto con pausa | H o pulsante ? |
@@ -127,11 +151,11 @@ Per eseguire i test di regressione, con Node.js 22 o superiore e senza installar
 node --test tests/game.test.cjs
 ```
 
-I test verificano raccolta ed esaurimento, arrivi diagonali e raccolta prolungata, prenotazione della popolazione, code e rimborsi, ritirata, mantenimento posizione, attacchi a distanza, danni ad area, conquista e perdita dell’avamposto, ondate, assalto e riavvio. I test dei livelli successivi coprono inoltre conquista fra tre fazioni, depositi multipli, limite 24 con prenotazioni, attacchi fra rivali, ondate alternate, eliminazione dei fronti e passaggio fra livelli. Per l’assedio verificano anche bonus distinti delle torri, scudo dinamico, tiro della Guardia, contrattacchi annunciati, limite 28 e vittoria con un esercito preparato. Usano una simulazione accelerata in una VM; le interazioni e il disegno richiedono anche una prova nel browser.
+I test verificano raccolta ed esaurimento, arrivi diagonali e raccolta prolungata, prenotazione della popolazione, code e rimborsi, ritirata, mantenimento posizione, attacchi a distanza, danni ad area, conquista e perdita dell’avamposto, ondate, assalto e riavvio. I test dei livelli successivi coprono inoltre conquista fra tre fazioni, depositi multipli, limite 24 con prenotazioni, attacchi fra rivali, ondate alternate, eliminazione dei fronti e passaggio fra livelli. Per l’assedio verificano anche bonus distinti delle torri, scudo dinamico, tiro della Guardia, contrattacchi annunciati, limite 28 e vittoria con un esercito preparato. Per la marca di ferro verificano scudo da quattro torri, Forgia, tenaglie, arieti corazzati, limite 30 e passaggio dal terzo livello; per gli aiuti al comando cura, avvisi, messaggi, raduno su risorse, gruppi e depositi. Usano una simulazione accelerata in una VM; le interazioni e il disegno richiedono anche una prova nel browser.
 
-`rules.js` raccoglie costi, statistiche e le configurazioni `RTS_LEVELS` (mappe, popolazione, risorse, avamposti e fortezze) per facilitare il bilanciamento. `game.js` gestisce simulazione, comandi e Canvas. La diagnostica `window.__rtsDebug.snapshot()` restituisce solo un riepilogo dello stato.
+`rules.js` raccoglie costi, statistiche e le configurazioni `RTS_LEVELS` (mappe, popolazione, risorse iniziali, avamposti, fortezze e calendario delle ondate) per facilitare il bilanciamento. Il comportamento di ogni livello dipende dai suoi campi (`kind`, `waveIntro`/`waveOrder` con tenaglie, `minWaveInterval`, `shieldPerTower`, `counterattacks`, `ramFrom`…), quindi un nuovo livello si aggiunge soprattutto come configurazione. `game.js` gestisce simulazione, comandi e Canvas. La diagnostica `window.__rtsDebug.snapshot()` restituisce solo un riepilogo dello stato.
 
-Il progetto resta single-player con tre mappe fisse, movimento diretto e IA a ondate. Ricerca dei percorsi intorno agli ostacoli, nebbia di guerra, salvataggi e multiplayer sono sviluppi futuri. Il bilanciamento può essere ulteriormente affinato con partite reali.
+Il progetto resta single-player con quattro mappe fisse, movimento diretto e IA a ondate. Ricerca dei percorsi intorno agli ostacoli, nebbia di guerra, salvataggi e multiplayer sono sviluppi futuri. Il bilanciamento può essere ulteriormente affinato con partite reali.
 
 ```text
 terre-di-confine/
