@@ -28,7 +28,7 @@ function game(level = 1) {
   const anchor = '  // Expose a tiny read-only diagnostic surface for automated smoke tests.';
   assert.ok(source.includes(anchor), 'test injection anchor exists');
   vm.runInContext(source.replace(anchor,
-    '  globalThis.testGame = {state, createUnit, createBuilding, resetWorld, keep, select, recruit, cancelTraining, reservedPopulation, orderUnits, update, updateWorker, updateFighter, updateOutpost, updateTraining, performAttack, damage, startWave, depositCargo, dispatchCommand, startGame, restart, finish, validBuild, citadelShield, updateTowerDefenses, planWave, frontHome, waveFront, waveFronts, forgeMultiplier, updateRam, saveGroup, recallGroup, selectSameType, nearestDepot, updateDefenses, beginBuild, placeBuilding, cancelBuild, updateTowerDefenses};\n' + anchor), sandbox);
+    '  globalThis.testGame = {state, createUnit, createBuilding, resetWorld, keep, select, recruit, cancelTraining, reservedPopulation, orderUnits, update, updateWorker, updateFighter, updateOutpost, updateTraining, performAttack, damage, startWave, depositCargo, dispatchCommand, startGame, restart, finish, validBuild, citadelShield, updateTowerDefenses, planWave, frontHome, waveFront, waveFronts, forgeMultiplier, updateRam, saveGroup, recallGroup, selectSameType, nearestDepot, updateDefenses, beginBuild, placeBuilding, cancelBuild, updateTowerDefenses, updateMissions, convoyAction, activeCart, controlRate, heldSanctuaries, selectArmy, playerUnits, updateHud};\n' + anchor), sandbox);
   const g = sandbox.testGame; g.resetWorld(level); g.state.running = true; g.elements = elements;
   g.step = (seconds, fn = g.update) => { for (let i = 0; i < Math.ceil(seconds * 60); i++) fn(1 / 60); };
   return g;
@@ -665,10 +665,10 @@ test('level five: a vast map, five posts with a neutral mill, bastions, three ca
   }
 });
 
-test('level five ends the campaign', () => {
+test('level five advances to the convoy mission', () => {
   const g = game(5), s = g.state;
   g.damage(g.keep('enemy'), 100000, 'player');
-  assert.equal(s.ended, true); assert.equal(s.nextLevel, false);
+  assert.equal(s.ended, true); assert.equal(s.nextLevel, true);
   assert.match(g.elements.get('modalSubtitle').textContent, /usurpatore/);
 });
 
@@ -804,5 +804,187 @@ test('a prepared army within 36 population can take the citadel past bastions an
   assert.equal(s.units.filter(u => u.team === 'player').length, 36);
   g.step(150);
   assert.equal(s.lastStandDone, true);
-  assert.equal(g.keep('enemy').hp, 0); assert.equal(s.ended, true); assert.equal(s.nextLevel, false);
+  assert.equal(g.keep('enemy').hp, 0); assert.equal(s.ended, true); assert.equal(s.nextLevel, true);
+});
+
+test('convoy scenario starts with a free waiting cart outside the population limit', () => {
+  const g = game(6), s = g.state, cart = g.activeCart();
+  assert.equal(s.popCap, 38); assert.equal(s.convoy.delivered, 0); assert.equal(cart.type, 'cart');
+  assert.equal(cart.moving, false); assert.equal(cart.hp, 480); assert.equal(g.playerUnits().length, 5);
+  assert.equal(s.buildings.filter(b => b.type === 'camp').length, 3);
+  g.selectArmy(); assert.equal(s.selected.length, 2); assert.ok(!s.selected.includes(cart));
+  g.select(cart); g.orderUnits(3550, 1100); g.dispatchCommand('hold');
+  assert.equal(cart.order, null); assert.equal(cart.moving, false);
+  g.saveGroup(1); assert.equal(s.groups[1], undefined);
+});
+
+test('cart follows the route, can halt midway, and requires an uncontested checkpoint to depart', () => {
+  const g = game(6), s = g.state, cart = g.activeCart();
+  g.convoyAction(); g.step(3, g.updateMissions); const x = cart.x;
+  assert.ok(x > 650 && x < 1400); g.convoyAction(); g.step(5, g.updateMissions); assert.equal(cart.x, x);
+  g.convoyAction(); g.step(20, g.updateMissions);
+  assert.equal(cart.routeIndex, 1); assert.equal(cart.x, 1400); assert.equal(cart.y, 900); assert.equal(cart.moving, false);
+  g.convoyAction(); assert.equal(cart.moving, false);
+  s.outposts[0].owner = 'player'; s.outposts[0].contested = true;
+  g.convoyAction(); assert.equal(cart.moving, false);
+  s.outposts[0].contested = false; g.convoyAction(); assert.equal(cart.moving, true);
+  g.step(30, g.updateMissions); assert.equal(cart.routeIndex, 2); assert.equal(cart.x, 2450); assert.equal(cart.y, 1350);
+});
+
+test('cart cannot capture or contest a checkpoint even alongside enemy military', () => {
+  const g = game(6), p = g.state.outposts[0], cart = g.activeCart();
+  cart.x = p.x; cart.y = p.y;
+  g.step(30, g.updateOutpost); assert.equal(p.owner, 'enemy');
+  g.createUnit('raider', 'enemy', p.x, p.y); g.updateOutpost(.1); assert.equal(p.contested, false);
+  g.createUnit('soldier', 'player', p.x, p.y); g.updateOutpost(.1); assert.equal(p.contested, true);
+});
+
+test('three actual route deliveries win; replacement carts for successful deliveries are free', () => {
+  const g = game(6), s = g.state; s.outposts.forEach(p => { p.owner = 'player'; p.control = 1; });
+  for (let delivered = 1; delivered <= 3; delivered++) {
+    const id = g.activeCart().id;
+    for (const seconds of [20, 25, 25]) { g.convoyAction(); g.step(seconds, g.updateMissions); }
+    assert.equal(s.convoy.delivered, delivered); assert.equal(s.wood, 240); assert.equal(s.gold, 120);
+    assert.equal(s.units.some(u => u.id === id), false);
+    if (delivered < 3) { assert.equal(s.ended, false); assert.equal(g.activeCart().moving, false); }
+  }
+  assert.equal(s.ended, true); assert.equal(s.nextLevel, true); assert.equal(s.convoy.lost, 0);
+  assert.match(g.elements.get('modalSubtitle').textContent, /Tre carri consegnati/);
+});
+
+test('a destroyed cart does not lose the mission and requires affordable replacement at the start', () => {
+  const g = game(6), s = g.state;
+  g.damage(g.activeCart(), 1000, 'enemy'); assert.equal(s.ended, false); assert.equal(s.convoy.lost, 1);
+  assert.equal(g.activeCart(), undefined); s.wood = 79; const gold = s.gold;
+  g.convoyAction(); assert.equal(g.activeCart(), undefined); assert.equal(s.gold, gold);
+  s.wood = 80; s.gold = 40; g.convoyAction();
+  assert.equal(s.wood, 0); assert.equal(s.gold, 0); assert.equal(g.activeCart().x, 650);
+  assert.equal(g.activeCart().routeIndex, 0); assert.equal(g.activeCart().moving, false);
+  assert.equal(s.convoy.delivered, 0);
+});
+
+test('knights prioritize the convoy but engage a military escort blocking their path', () => {
+  const g = game(6), s = g.state, cart = g.activeCart(); cart.x = 1900; cart.y = 1000;
+  const worker = g.createUnit('worker', 'player', 1680, 1000);
+  const knight = g.createUnit('knight', 'enemy', 1700, 1000, { type: 'raid', targetId: g.keep('player').id });
+  g.updateFighter(knight, .1); assert.ok(knight.x > 1700); assert.equal(worker.hp, 55);
+  knight.x = cart.x - 20; knight.cooldown = 0; g.updateFighter(knight, .1); assert.ok(cart.hp < 480);
+  const hp = cart.hp, soldier = g.createUnit('soldier', 'player', knight.x - 10, knight.y);
+  knight.cooldown = 0; g.updateFighter(knight, .1); assert.ok(soldier.hp < 125); assert.equal(cart.hp, hp);
+});
+
+test('convoy warnings identify cavalry and destroying all camps does not deliver supplies', () => {
+  const g = game(6), s = g.state; s.waveIn = 20; g.update(.05); g.updateHud();
+  assert.match(g.elements.get('waveNotice').textContent, /Cavalieri/);
+  const camps = s.buildings.filter(b => b.type === 'camp'); camps.forEach(b => g.damage(b, 10000, 'player'));
+  assert.equal(s.ended, false); const count = s.units.length;
+  for (let i = 0; i < 6; i++) g.startWave(); assert.equal(s.units.length, count);
+  assert.equal(s.convoy.delivered, 0);
+});
+
+test('convoy population reservations exclude the cart at the 38-unit limit', () => {
+  const g = game(6), s = g.state; s.wood = s.gold = 10000;
+  for (let i = 0; i < 32; i++) g.createUnit('worker', 'player', 350, 1100);
+  const b = g.createBuilding('barracks', 'player', 700, 1200); g.select(b); g.recruit('soldier');
+  g.select(g.keep('player')); g.recruit('worker'); assert.equal(g.reservedPopulation(), 1);
+  g.step(8, g.updateTraining); assert.equal(g.playerUnits().length, 38); assert.ok(g.activeCart());
+});
+
+test('checkpoints and sanctuaries support magi, deposits and forward construction', () => {
+  for (const level of [6, 7]) {
+    const g = game(level), s = g.state, p = s.outposts[0]; s.wood = s.gold = 1000;
+    p.owner = 'player'; p.control = 1;
+    const worker = g.createUnit('worker', 'player', p.x, p.y); worker.carry = 18; worker.carryType = 'gold';
+    assert.equal(g.depositCargo(worker, .1), true);
+    const b = g.createBuilding('barracks', 'player', p.x + 200, p.y); g.select(b); g.recruit('mage');
+    assert.equal(b.queue.length, 1); assert.equal(g.validBuild(p.x, p.y + 220, 'depot'), true);
+    p.contested = true; assert.equal(g.validBuild(p.x, p.y + 220, 'depot'), false);
+  }
+});
+
+test('two safe sanctuaries accumulate ritual time; losses and contests pause without resetting', () => {
+  const g = game(7), s = g.state;
+  assert.equal(s.popCap, 40); assert.equal(s.controlTime, 0);
+  assert.equal(s.outposts.filter(p => p.owner === 'neutral').length, 2);
+  s.outposts[0].owner = 'player'; g.step(10, g.updateMissions); assert.equal(s.controlTime, 0);
+  s.outposts[2].owner = 'player'; g.step(20, g.updateMissions); assert.ok(Math.abs(s.controlTime - 20) < 1e-6);
+  const progress = s.controlTime; s.outposts[2].contested = true; g.step(20, g.updateMissions); assert.equal(s.controlTime, progress);
+  s.outposts[2].contested = false; s.outposts[2].owner = 'enemy'; g.step(20, g.updateMissions); assert.equal(s.controlTime, progress);
+  s.outposts[2].owner = 'player'; g.step(10, g.updateMissions); assert.ok(Math.abs(s.controlTime - 30) < 1e-6);
+});
+
+test('all three sanctuaries accelerate the ritual to 1.5 and victory requires 180 accumulated seconds', () => {
+  const g = game(7), s = g.state; s.outposts.forEach(p => { p.owner = 'player'; p.control = 1; });
+  assert.equal(g.controlRate(), 1.5); g.step(60, g.updateMissions); assert.ok(Math.abs(s.controlTime - 90) < 1e-6);
+  assert.equal(s.ended, false); g.step(60, g.updateMissions);
+  assert.equal(s.controlTime, 180); assert.equal(s.ended, true); assert.equal(s.nextLevel, false);
+  assert.match(g.elements.get('modalSubtitle').textContent, /sigilli sono ricomposti/);
+});
+
+test('actual military presence contests a sanctuary before the ritual can tick', () => {
+  const g = game(7), s = g.state;
+  for (const p of s.outposts.slice(0, 2)) { p.owner = 'player'; p.control = 1; }
+  const p = s.outposts[0]; g.createUnit('soldier', 'player', p.x - 80, p.y);
+  g.createUnit('raider', 'enemy', p.x + 80, p.y); g.update(.02);
+  assert.equal(p.contested, true); assert.equal(s.controlTime, 0);
+});
+
+test('sanctuary waves target their advertised posts and preserve split pincer destinations', () => {
+  const g = game(7), s = g.state; s.wave = 4; s.waveIn = 20; g.update(.02); g.updateHud();
+  assert.match(g.elements.get('waveNotice').textContent, /alba/); assert.match(g.elements.get('waveNotice').textContent, /crepuscolo/);
+  g.startWave(); const raid = s.units.filter(u => u.order?.type === 'raid');
+  assert.ok(raid.every(u => u.order.viaOutpost)); assert.deepEqual([...new Set(raid.map(u => u.order.postId))].sort(), ['post-0', 'post-2']);
+  s.buildings.filter(b => b.type === 'camp').forEach(b => g.damage(b, 10000)); assert.equal(s.ended, false);
+});
+
+test('pause freezes missions and reset clears cargo losses, ritual progress and mission UI', () => {
+  const g = game(6), s = g.state; g.convoyAction(); const cart = g.activeCart();
+  s.running = false; g.step(20); g.step(20, g.updateMissions); g.convoyAction(); assert.equal(cart.x, 650);
+  s.running = true; g.damage(cart, 1000); g.restart(6); assert.equal(s.convoy.lost, 0); assert.equal(g.activeCart().moving, false);
+  g.restart(7); s.running = true; s.outposts.forEach(p => { p.owner = 'player'; p.control = 1; });
+  g.step(10, g.updateMissions); const t = s.controlTime; s.running = false; g.step(10, g.updateMissions); assert.equal(s.controlTime, t);
+  g.restart(1); assert.equal(s.controlTime, 0); assert.equal(s.convoy, null); assert.equal(g.activeCart(), undefined);
+  assert.equal(g.elements.get('gameShell').dataset.mission, ''); assert.equal(s.popCap, 18);
+});
+
+test('campaign progresses 5 to 6 to 7; castle destruction still loses both objective missions', () => {
+  const g = game(5), s = g.state; g.damage(g.keep('enemy'), 100000); g.startGame(); assert.equal(s.popCap, 38);
+  s.outposts.forEach(p => { p.owner = 'player'; p.control = 1; });
+  for (let delivery = 0; delivery < 3; delivery++) for (const time of [20, 25, 25]) { g.convoyAction(); g.step(time, g.updateMissions); }
+  g.startGame(); assert.equal(s.popCap, 40); assert.equal(s.convoy, null); assert.equal(s.controlTime, 0);
+  for (const level of [6, 7]) { g.restart(level); s.running = true; g.damage(g.keep('player'), 10000); assert.equal(s.ended, true); assert.equal(s.nextLevel, false); }
+});
+
+test('a prepared escort and checkpoint garrisons can deliver all carts under live enemy waves', () => {
+  const g = game(6), s = g.state;
+  s.units = s.units.filter(u => u.team !== 'player' || u.type === 'worker' || u.type === 'cart');
+  s.outposts.forEach(p => { p.owner = 'player'; p.control = 1; });
+  for (const p of s.outposts) {
+    for (const [type, count] of [['soldier', 10], ['archer', 5], ['mage', 2]]) {
+      for (let i = 0; i < count; i++) g.createUnit(type, 'player', p.x + (type === 'soldier' ? 40 : -40), p.y - 90 + i * 18,
+        { type: 'hold', x: p.x, y: p.y });
+    }
+  }
+  assert.equal(g.playerUnits().length, 37);
+  for (let delivered = 1; delivered <= 3; delivered++) {
+    for (const time of [20, 25, 25]) { g.convoyAction(); g.step(time); }
+    assert.equal(s.convoy.delivered, delivered);
+  }
+  assert.equal(s.ended, true); assert.equal(s.nextLevel, true); assert.equal(s.convoy.lost, 0);
+});
+
+test('a prepared distributed army can hold the sanctuaries through late waves and a pincer', () => {
+  const g = game(7), s = g.state;
+  s.units = s.units.filter(u => u.team !== 'player' || u.type === 'worker');
+  s.wave = 8; s.waveIn = 5; s.time = 350;
+  s.outposts.forEach((p, index) => {
+    p.owner = 'player'; p.control = 1;
+    for (const [type, count] of [['soldier', 5], ['archer', index === 1 ? 4 : 5], ['mage', index === 1 ? 2 : 3]]) {
+      for (let i = 0; i < count; i++) g.createUnit(type, 'player', p.x + (type === 'soldier' ? 40 : -40), p.y - 60 + i * 24,
+        { type: 'hold', x: p.x, y: p.y });
+    }
+  });
+  assert.equal(g.playerUnits().length, 40);
+  g.step(180); assert.equal(s.controlTime, 180); assert.equal(s.ended, true); assert.equal(s.nextLevel, false);
+  assert.ok(g.keep('player').hp > 0);
 });

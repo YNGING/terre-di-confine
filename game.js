@@ -13,7 +13,7 @@
     units: [], buildings: [], nodes: [], decorations: [], particles: [],
     selected: [], camera: { x: 0, y: 0 }, width: 900, height: 600,
     pointer: null, mouse: { x: 0, y: 0 }, keys: new Set(),
-    toastUntil: 0, toastHeld: false, lastHud: -1, pings: [], alertAt: {}, groups: {}, lastGroup: null, lastClick: null, placing: null, lastStandDone: false, idSequence: 0, effects: [], outpost: null, outposts: [], postIndex: 0, nextLevel: false, wavePlan: null,
+    toastUntil: 0, toastHeld: false, lastHud: -1, pings: [], alertAt: {}, groups: {}, lastGroup: null, lastClick: null, placing: null, lastStandDone: false, idSequence: 0, effects: [], outpost: null, outposts: [], postIndex: 0, nextLevel: false, wavePlan: null, convoy: null, controlTime: 0,
     stats: { killed: 0, trained: 0, gathered: 0 }
   };
   const uid = () => ++state.idSequence;
@@ -25,15 +25,20 @@
     return ((v ^ (v >>> 16)) >>> 0) / 4294967296;
   };
   const pos = (x, y) => ({ x, y });
-  const playerUnits = () => state.units.filter(u => u.team === 'player' && u.hp > 0);
+  const playerUnits = () => state.units.filter(u => u.team === 'player' && u.hp > 0 && u.type !== 'cart');
   const alive = (item) => item && item.hp > 0;
   const fmtTime = (seconds) => `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
   const canPay = (price) => state.wood >= price.wood && state.gold >= price.gold;
   const isUnit = (entity) => !!entity && !!RULES.units[entity.type];
+  const commandable = u => isUnit(u) && u.type !== 'cart';
+  const isMission = () => !!(level.convoy || level.control);
+  const activeCart = () => state.units.find(u => u.id === state.convoy?.cartId && alive(u));
+  const heldSanctuaries = () => state.outposts.filter(p => p.role === 'sanctuary' && p.owner === 'player' && !p.contested).length;
+  const controlRate = () => !level.control || heldSanctuaries() < level.control.required ? 0 : heldSanctuaries() === state.outposts.length ? level.control.allRate : 1;
   const reservedPopulation = () => state.buildings.filter(alive).reduce((sum, b) => sum + b.queue.length, 0);
   const canRecruit = (price) => canPay(price) && playerUnits().length + reservedPopulation() < state.popCap;
-  const canTrainMage = () => state.outposts.some(p => p.owner === 'player' && (!p.role || p.role === 'arcane'));
-  const usableDepot = p => p.owner === 'player' && !p.contested && (!p.role || p.role === 'market');
+  const canTrainMage = () => state.outposts.some(p => p.owner === 'player' && (!p.role || ['arcane', 'checkpoint', 'sanctuary'].includes(p.role)));
+  const usableDepot = p => p.owner === 'player' && !p.contested && (!p.role || ['market', 'checkpoint', 'sanctuary'].includes(p.role));
   const citadelShield = () => level.shieldPerTower ? state.outposts.filter(p => isEnemy(p.owner)).length * level.shieldPerTower : 0;
   const isEnemy = team => team === 'enemy' || team === 'enemy2';
   const teamName = team => team === 'player' ? 'Alleato' : team === 'neutral' ? 'Neutrale' : level.factionName || level.enemies.find(e => e.team === team)?.name || 'Nemico';
@@ -62,6 +67,77 @@
   const spend = (price) => { if (!canPay(price)) return false; state.wood -= price.wood; state.gold -= price.gold; return true; };
   const keep = (team) => state.buildings.find(b => b.type === 'keep' && b.team === team);
   const named = (entity) => `${entity.frontName || TYPE_NAMES[entity.type] || entity.type}${isEnemy(entity.team) ? ` · ${teamName(entity.team)}` : ''}`;
+
+  function spawnCart() {
+    const start = level.convoy.route[0];
+    const cart = createUnit('cart', 'player', start.x, start.y);
+    cart.routeIndex = 0; cart.waiting = true; cart.moving = false;
+    state.convoy.cartId = cart.id;
+    return cart;
+  }
+  function cartCanDepart(cart) {
+    if (!cart.waiting) return true; // A manual halt along a segment can always resume.
+    const stop = level.convoy.route[cart.routeIndex];
+    return stop.post === undefined || usableDepot(state.outposts[stop.post]);
+  }
+  function convoyAction() {
+    if (!level.convoy || !state.running || state.ended) return;
+    let cart = activeCart();
+    if (!cart) {
+      if (!spend(level.convoy.replacementCost)) { toast('Risorse insufficienti per sostituire il carro.'); return; }
+      cart = spawnCart(); toast('Carro sostitutivo pronto alla partenza.');
+    } else if (cart.moving) {
+      cart.moving = false; toast('Carro fermato. Riparti quando la strada è sicura.');
+    } else if (!cartCanDepart(cart)) {
+      toast('Per ripartire, conquista il presidio e libera la zona dai nemici.');
+    } else {
+      cart.moving = true; cart.waiting = false;
+      toast(`Carro in marcia verso ${level.convoy.route[cart.routeIndex + 1].name}.`);
+    }
+    updateHud();
+  }
+  function focusCart() {
+    if (!level.convoy || !state.running) return;
+    const cart = activeCart(), point = cart || level.convoy.route[0];
+    centerCamera(point.x, point.y); if (cart) select(cart);
+  }
+  function updateMissions(dt) {
+    if (!state.running || state.ended) return;
+    if (level.convoy) {
+      const cart = activeCart();
+      if (cart?.moving && moveTo(cart, level.convoy.route[cart.routeIndex + 1], 0, dt)) {
+        cart.routeIndex++; cart.moving = false; cart.waiting = true;
+        if (cart.routeIndex === level.convoy.route.length - 1) {
+          // Delivery retires this cart without counting as a casualty or occupying population.
+          cart.hp = 0; state.convoy.cartId = null; state.convoy.delivered++;
+          state.units = state.units.filter(u => u !== cart);
+          if (state.convoy.delivered >= level.convoy.goal) { finish(true); return; }
+          spawnCart(); toast(`Consegna ${state.convoy.delivered}/${level.convoy.goal}! Un nuovo carro gratuito ti attende alla base.`);
+        } else toast(`Carro in sosta: ${level.convoy.route[cart.routeIndex].name}. Scorta e presidio pronti? Premi Riprendi.`);
+      }
+    }
+    if (level.control) {
+      state.controlTime = Math.min(level.control.goal, state.controlTime + dt * controlRate());
+      if (state.controlTime >= level.control.goal - 1e-8) { state.controlTime = level.control.goal; finish(true); }
+    }
+  }
+  function updateMissionHud() {
+    if (!isMission()) return;
+    const progress = $('missionProgress');
+    if (level.convoy) {
+      const cart = activeCart(), ready = cart && cartCanDepart(cart);
+      progress.max = level.convoy.goal; progress.value = state.convoy.delivered;
+      $('missionStatus').textContent = !cart ? 'Carro perso: serve un sostituto.' : cart.moving
+        ? `In marcia · ${Math.ceil(cart.hp)} PV` : cart.waiting && !ready
+          ? `Conquista ${level.convoy.route[cart.routeIndex].name} per ripartire.` : `In sosta · ${Math.ceil(cart.hp)} PV`;
+      $('convoyBtn').textContent = !cart ? `Sostituisci · ${priceText(level.convoy.replacementCost)}` : cart.moving ? 'Ferma carro' : ready ? 'Avvia / riprendi' : 'Presidio da liberare';
+      $('convoyBtn').disabled = !state.running || state.ended || (!cart ? !canPay(level.convoy.replacementCost) : !cart.moving && !ready);
+    } else {
+      const rate = controlRate();
+      progress.max = level.control.goal; progress.value = state.controlTime;
+      $('missionStatus').textContent = `${heldSanctuaries()}/3 santuari sicuri · ${rate ? `rituale ×${String(rate).replace('.', ',')}` : 'rituale fermo'}`;
+    }
+  }
 
   function createUnit(type, team, x, y, order = null) {
     const c = RULES.units[type], u = { id: uid(), type, team, x, y, hp: c.hp, maxHp: c.hp,
@@ -92,7 +168,11 @@
     state.mode = 'select'; state.units = []; state.buildings = []; state.nodes = [];
     state.particles = []; state.effects = []; state.selected = []; state.toastUntil = 0; state.toastHeld = false;
     state.pings = []; state.alertAt = {}; state.groups = {}; state.lastGroup = null; state.lastClick = null;
-    state.placing = null; state.lastStandDone = false;
+    state.placing = null; state.lastStandDone = false; state.controlTime = 0;
+    state.convoy = level.convoy ? { delivered: 0, lost: 0, cartId: null } : null;
+    $('gameShell').dataset.mission = level.convoy ? 'escort' : level.control ? 'control' : '';
+    if (isMission()) $('missionPanel').classList.remove('hidden'); else $('missionPanel').classList.add('hidden');
+    if (level.convoy) $('convoyControls').classList.remove('hidden'); else $('convoyControls').classList.add('hidden');
     state.pointer = null; state.keys.clear(); state.popCap = level.population;
     state.outposts = level.posts.map((p, i) => ({ ...RULES.outpost, ...p, id: `post-${i}`,
       type: 'outpost', control: p.initialOwner ? -1 : 0, owner: p.initialOwner || 'neutral',
@@ -118,6 +198,7 @@
     createUnit('worker', 'player', x + 85, y + 85);
     createUnit('soldier', 'player', x + 125, y - 57);
     createUnit('soldier', 'player', x + 145, y + 18);
+    if (level.convoy) spawnCart();
     level.wood.forEach(p => addNode('wood', ...p));
     level.gold.forEach(p => addNode('gold', ...p));
     state.decorations = [];
@@ -130,7 +211,7 @@
     $('placementNotice').classList.add('hidden');
     $('cancelOrderBtn').classList.add('hidden');
     const roleGuide = { market: 'Mercato: oro e deposito', arcane: 'Arcana: maghi', guard: 'Guardia: frecce', forge: 'Forgia: +20% danni' };
-    $('conquestGuide').textContent = isSiege() ? `${level.posts.map(p => p.guide || roleGuide[p.role]).join('. ')}. Ogni torre sottratta al nemico riduce lo scudo della ${citadelName().toLowerCase()} del ${shieldPct()}%.${buildable().includes('depot') ? ' Magazzino: M, vicino al castello o a una torre alleata.' : ''}` : 'Costruisci la caserma (B). Armigero: R, arciere: Q, mago: E. Tieni truppe nell’avamposto per sbloccare i maghi.';
+    $('conquestGuide').textContent = level.missionGuide || (isSiege() ? `${level.posts.map(p => p.guide || roleGuide[p.role]).join('. ')}. Ogni torre sottratta al nemico riduce lo scudo della ${citadelName().toLowerCase()} del ${shieldPct()}%.${buildable().includes('depot') ? ' Magazzino: M, vicino al castello o a una torre alleata.' : ''}` : 'Costruisci la caserma (B). Armigero: R, arciere: Q, mago: E. Tieni truppe nell’avamposto per sbloccare i maghi.');
     updateHud();
   }
   function centerCamera(x, y) {
@@ -158,11 +239,11 @@
     state.toastUntil = state.time + 4.1; state.toastHeld = !ambient;
   }
   function raiseAlert(victim) {
-    const kind = ['keep', 'barracks', 'depot'].includes(victim.type) ? victim.type : 'worker';
+    const kind = ['keep', 'barracks', 'depot', 'cart'].includes(victim.type) ? victim.type : 'worker';
     if (state.time - (state.alertAt[kind] ?? -Infinity) < RULES.alertCooldown) return;
     state.alertAt[kind] = state.time;
     state.pings.push({ x: victim.x, y: victim.y, life: 3, full: 3 });
-    toast({ keep: 'Il castello è sotto attacco!', barracks: 'Una caserma è sotto attacco!', depot: 'Un magazzino è sotto attacco!', worker: 'Contadini sotto attacco!' }[kind]);
+    toast({ keep: 'Il castello è sotto attacco!', barracks: 'Una caserma è sotto attacco!', depot: 'Un magazzino è sotto attacco!', worker: 'Contadini sotto attacco!', cart: 'Il carro è sotto attacco!' }[kind]);
   }
   function select(item, multi = false) {
     if (!multi) state.selected = [];
@@ -189,17 +270,18 @@
     $('population').textContent = `${playerUnits().length}${reserved ? ` +${reserved}` : ''} / ${state.popCap}`;
     $('population').title = 'Unità vive + posti prenotati in coda';
     $('timer').textContent = fmtTime(state.time);
+    updateMissionHud();
     const front = waveFront(), live = waveFronts().filter(f => alive(frontHome(f)));
     $('waveText').textContent = `${level.kind !== 'outpost' ? (live.length ? live.map(f => f.name.toUpperCase()).join(' + ') : 'TREGUA') + ' · ' : ''}ONDATA ${state.wave} · ${Math.ceil(Math.max(0, state.waveIn))}s`;
     const plan = state.wavePlan, announcedPost = state.outposts.find(p => p.id === plan?.postId);
-    $('waveNotice').textContent = plan?.counter && alive(frontHome(front)) ? `Contrattacco: ${announcedPost.name}` : plan && live.length > 1 ? `Tenaglia: ${live.map(f => f.name).join(' + ')}` : '';
+    $('waveNotice').textContent = plan && isMission() && live.length ? (level.control ? 'Assalto: ' + live.map(f => state.outposts[f.post].name).join(' + ') : live.some(f => f.troops === 'knight') ? 'Cavalieri in arrivo: proteggi il carro!' : 'Incursione verso i presidi') : plan?.counter && alive(frontHome(front)) ? `Contrattacco: ${announcedPost.name}` : plan && live.length > 1 ? `Tenaglia: ${live.map(f => f.name).join(' + ')}` : '';
     const remaining = state.buildings.filter(b => b.type === 'keep' && isEnemy(b.team) && alive(b)).length;
     const fortressTotal = level.enemies.filter(e => !e.type).length, camps = state.buildings.filter(b => b.type === 'camp');
-    $('objectiveText').textContent = isSiege() ? `${citadelName()} · scudo ${Math.round(citadelShield()*100)}% · campi attivi ${camps.filter(alive).length}/${camps.length}` : level.kind === 'outpost' ? 'Distruggi la fortezza nemica' : `Distruggi le fortezze rivali · ${fortressTotal - remaining}/${fortressTotal}`;
+    $('objectiveText').textContent = level.convoy ? `Carri consegnati ${state.convoy.delivered}/${level.convoy.goal} · proteggi il castello` : level.control ? `Sigilli ${Math.floor(state.controlTime)}/${level.control.goal}s · ${heldSanctuaries()}/3 sicuri` : isSiege() ? `${citadelName()} · scudo ${Math.round(citadelShield()*100)}% · campi attivi ${camps.filter(alive).length}/${camps.length}` : level.kind === 'outpost' ? 'Distruggi la fortezza nemica' : `Distruggi le fortezze rivali · ${fortressTotal - remaining}/${fortressTotal}`;
     $('levelLabel').textContent = `LIVELLO ${level.id} · ${level.name.toUpperCase()}`;
     const post = state.selected.length === 1 && state.selected[0].type === 'outpost' ? state.selected[0] : state.outposts[state.postIndex];
     const ownerLabel = teamName(post.owner);
-    $('outpostStatus').textContent = `${level.kind !== 'outpost' ? `${isSiege() ? 'Torri' : 'Avamposti'} ${state.outposts.filter(p => p.owner === 'player').length}/${state.outposts.length} · ${post.name.replace(/^(Avamposto|Torre) /, '')}` : 'Avamposto'}: ${post.contested ? 'conteso' : ownerLabel.toLowerCase()} · ${Math.round(Math.abs(post.control) * 100)}%`;
+    $('outpostStatus').textContent = `${level.kind !== 'outpost' ? `${level.control ? 'Santuari' : level.convoy ? 'Presidi' : isSiege() ? 'Torri' : 'Avamposti'} ${state.outposts.filter(p => p.owner === 'player').length}/${state.outposts.length} · ${post.name.replace(/^(Avamposto|Torre|Presidio|Santuario) /, '')}` : 'Avamposto'}: ${post.contested ? 'conteso' : ownerLabel.toLowerCase()} · ${Math.round(Math.abs(post.control) * 100)}%`;
     $('outpostStatus').title = level.kind !== 'outpost' ? `Clicca per scorrere e selezionare i ${state.outposts.length} punti di controllo` : 'Centra e seleziona l’avamposto';
     $('outpostStatus').dataset.owner = post.contested ? 'contested' : post.owner;
     $('idleBtn').textContent = `⚒ Inattivi: ${playerUnits().filter(u => u.type === 'worker' && !u.order).length}`;
@@ -209,7 +291,7 @@
     let cmd = '', badges = '';
     if (!sel.length) {
       title.textContent = 'Nessuna selezione';
-      description.textContent = isSiege() ? `Conquista le torri per indebolire lo scudo. Distruggi gli accampamenti per fermare i rinforzi.${state.outposts.some(p => p.role === 'forge') ? ' La Forgia potenzia chi la controlla.' : ''}${buildable().includes('depot') ? ' Costruisci magazzini (M) vicino ai giacimenti lontani.' : ''} La caduta della ${citadelName().toLowerCase()} conclude l’assedio.` : level.kind === 'outpost' ? 'Sviluppa la base e conquista l’avamposto centrale per ottenere oro e reclutare maghi.' : 'Conquista gli avamposti per oro e depositi. Ne basta uno per reclutare maghi. Rossi e Viola sono rivali: elimina entrambe le fortezze.';
+      description.textContent = level.missionGuide || (isSiege() ? `Conquista le torri per indebolire lo scudo. Distruggi gli accampamenti per fermare i rinforzi.${state.outposts.some(p => p.role === 'forge') ? ' La Forgia potenzia chi la controlla.' : ''}${buildable().includes('depot') ? ' Costruisci magazzini (M) vicino ai giacimenti lontani.' : ''} La caduta della ${citadelName().toLowerCase()} conclude l’assedio.` : level.kind === 'outpost' ? 'Sviluppa la base e conquista l’avamposto centrale per ottenere oro e reclutare maghi.' : 'Conquista gli avamposti per oro e depositi. Ne basta uno per reclutare maghi. Rossi e Viola sono rivali: elimina entrambe le fortezze.');
       hint.textContent = 'Clic: seleziona · doppio clic: stesso tipo · clic destro: ordina · G: esercito · I: inattivo · Ctrl+1…5: gruppi';
     } else if (first.type === 'outpost' && sel.length === 1) {
       title.textContent = post.name;
@@ -221,7 +303,7 @@
       title.textContent = `${sel.length} elementi selezionati`;
       description.textContent = 'Sposta il gruppo, avanza combattendo o mantieni la posizione.';
       const workers = sel.filter(e => e.type === 'worker' && e.team === 'player');
-      const fighters = sel.filter(e => isUnit(e) && e.type !== 'worker' && e.team === 'player');
+      const fighters = sel.filter(e => commandable(e) && e.type !== 'worker' && e.team === 'player');
       badges = `<span class="stat-pill">⚒ ${workers.length} contadini</span><span class="stat-pill">⚔ ${fighters.length} combattenti</span>`;
       if (workers.length) cmd += buildButtons();
       hint.textContent = 'Muovi permette la ritirata. Avanza ingaggia i nemici lungo il percorso.';
@@ -238,14 +320,15 @@
           raider: 'Predone da mischia. Minaccia lavoratori, avamposto e castello.',
           ram: 'Ariete d’assedio: ignora le unità e sfonda gli edifici. Corazzato: frecce di arcieri, castello e torri fanno metà danni. Fermalo con armigeri e maghi.',
           knight: 'Cavaliere: velocissimo, razzia contadini e magazzini lontani dal castello. Tieni qualche armigero o arciere vicino ai raccoglitori.',
-          champion: 'Campione della Guardia reale: lento ma fortissimo in mischia. Circondalo e colpiscilo da lontano.'
+          champion: 'Campione della Guardia reale: lento ma fortissimo in mischia. Circondalo e colpiscilo da lontano.',
+          cart: 'Carro della missione: non combatte, non conquista e non occupa popolazione. Segue la strada e si ferma ai presidi. Usa i pulsanti del convoglio sopra la minimappa.'
         };
         description.textContent = descriptions[u.type];
         if (u.carry) badges += `<span class="stat-pill">Trasporta ${u.carry} ${u.carryType === 'wood' ? 'legno' : 'oro'}</span>`;
-        if (u.type !== 'worker') badges += `<span class="stat-pill">⚔ ${u.damage} · portata ${u.range}</span>`;
+        if (u.type !== 'worker' && u.type !== 'cart') badges += `<span class="stat-pill">⚔ ${u.damage} · portata ${u.range}</span>`;
         if (forgeMultiplier(u.team) > 1) badges += `<span class="stat-pill">Forgia +${Math.round((forgeMultiplier(u.team) - 1) * 100)}% danni</span>`;
         if (friendly && u.type === 'worker') cmd += buildButtons();
-        hint.textContent = u.order?.type === 'hold' ? 'Mantiene la posizione: attacca solo a portata, senza inseguire.' : friendly ? 'Clic destro: ordine contestuale · F: avanza · X: mantieni · vicino al castello si cura' : 'Unità nemica: clic destro con le tue truppe per attaccarla.';
+        hint.textContent = u.type === 'cart' ? 'Usa Avvia / riprendi o Ferma carro sopra la minimappa. I normali ordini militari non cambiano il percorso.' : u.order?.type === 'hold' ? 'Mantiene la posizione: attacca solo a portata, senza inseguire.' : friendly ? 'Clic destro: ordine contestuale · F: avanza · X: mantieni · vicino al castello si cura' : 'Unità nemica: clic destro con le tue truppe per attaccarla.';
       } else {
         description.textContent = u.type === 'camp' ? (level.enemies[u.frontIndex]?.troops === 'knight' ? 'Scuderie: inviano cavalieri contro contadini e magazzini. Distruggile per fermare le razzie.' : 'Accampamento di rinforzi. Distruggilo per eliminare le sue ondate: i suoi turni resteranno vuoti.')
           : u.type === 'bastion' ? `Bastione: frecce da ${RULES.defenses.bastion.enemyDamage} danni ogni ${String(RULES.defenses.bastion.cooldown).replace('.', ',')}s, portata ${RULES.defenses.bastion.range}. Non serve abbatterlo per vincere, ma protegge la cittadella.`
@@ -273,7 +356,7 @@
         hint.textContent = u.type === 'depot' && friendly ? 'Clic destro con i contadini carichi per depositare qui.' : friendly ? 'Clic destro sul terreno: raduno. Il + in popolazione indica i posti prenotati.' : 'La fortezza è difesa: prepara un esercito prima dell’assalto.';
       }
     }
-    if (sel.some(u => u.team === 'player' && isUnit(u))) {
+    if (sel.some(u => u.team === 'player' && commandable(u))) {
       cmd += '<div class="tactics">' + commandButton('move', 'Muovi', 'Ritirata senza ingaggiare', '→') +
         commandButton('attack-move', 'Avanza', 'Combatti lungo il percorso · F', '⚔') +
         commandButton('hold', 'Mantieni', 'Attacca senza inseguire · X', '◆') + '</div>';
@@ -338,7 +421,7 @@
     updateHud(); toast('Reclutamento annullato: risorse rimborsate.');
   }
   function setOrderMode(mode) {
-    if (!selectedAlive().some(u => u.team === 'player' && isUnit(u))) return;
+    if (!selectedAlive().some(u => u.team === 'player' && commandable(u))) return;
     state.mode = mode;
     $('cancelOrderBtn').classList.remove('hidden');
     $('placementNotice').textContent = mode === 'attack-move' ? '⚔ Scegli dove avanzare combattendo · ESC annulla' : '→ Scegli la destinazione · ESC annulla';
@@ -355,7 +438,7 @@
     if (!state.selected.length) toast('Non hai ancora unità militari.');
   }
   function saveGroup(n) {
-    const army = selectedAlive().filter(u => u.team === 'player' && isUnit(u));
+    const army = selectedAlive().filter(u => u.team === 'player' && commandable(u));
     if (!army.length) { toast('Seleziona prima le unità da salvare nel gruppo.'); return; }
     state.groups[n] = army.map(u => u.id);
     toast(`Gruppo ${n}: ${army.length} ${army.length === 1 ? 'unità salvata' : 'unità salvate'}.`);
@@ -378,13 +461,14 @@
   }
   function dispatchCommand(command) {
     if (!state.running || state.ended) return;
+    if (command === 'convoy') { convoyAction(); return; }
     if (command === 'build') beginBuild('barracks');
     else if (command.startsWith('build-')) beginBuild(command.slice(6));
     else if (command.startsWith('recruit-')) recruit(command.slice(8));
     else if (command === 'cancel-training') cancelTraining();
     else if (command === 'move' || command === 'attack-move') setOrderMode(command);
     else if (command === 'hold') {
-      selectedAlive().filter(u => u.team === 'player' && isUnit(u)).forEach(u => { u.order = { type: 'hold', x: u.x, y: u.y }; });
+      selectedAlive().filter(u => u.team === 'player' && commandable(u)).forEach(u => { u.order = { type: 'hold', x: u.x, y: u.y }; });
       cancelBuild(); updateHud(); toast('Posizione mantenuta.');
     } else if (command === 'rally') {
       $('cancelOrderBtn').classList.remove('hidden');
@@ -437,7 +521,7 @@
       building.rally = { x: clamp(x, 18, W - 18), y: clamp(y, 18, H - 18) };
       cancelBuild(); updateHud(); toast('Punto di raduno impostato.'); return;
     }
-    const army = selected.filter(u => u.team === 'player' && isUnit(u));
+    const army = selected.filter(u => u.team === 'player' && commandable(u));
     if (!army.length) return;
     const target = mode === 'context' ? pick(x, y) : null;
     if (target?.stock > 0) {
@@ -499,7 +583,7 @@
     if (!alive(victim)) return;
     if (level.shieldPerTower && victim.type === 'keep' && isEnemy(victim.team)) amount *= 1 - citadelShield();
     victim.hp = Math.max(0, victim.hp - amount); victim.lastHit = state.time;
-    if (victim.team === 'player' && isEnemy(attackerTeam) && (!isUnit(victim) || victim.type === 'worker')) raiseAlert(victim);
+    if (victim.team === 'player' && isEnemy(attackerTeam) && (!isUnit(victim) || victim.type === 'worker' || victim.type === 'cart')) raiseAlert(victim);
     // The citadel's last stand: the royal guard sorties once, the first time it falls below the threshold.
     const stand = level.lastStand;
     if (stand && !state.lastStandDone && alive(victim) && victim.type === 'keep' && isEnemy(victim.team) && victim.hp <= victim.maxHp * stand.at) {
@@ -511,12 +595,16 @@
     if (!alive(victim)) {
       burst(victim.x, victim.y, '#f9c17a', 18, .9);
       if (attackerTeam === 'player' && isEnemy(victim.team) && isUnit(victim)) state.stats.killed++;
+      if (victim.type === 'cart' && state.convoy) {
+        state.convoy.cartId = null; state.convoy.lost++;
+        toast('Carro distrutto! Puoi sostituirlo dalla minimappa: 80 legno e 40 oro.');
+      }
       if (victim.type === 'camp') toast(`${victim.frontName} distrutto: rinforzi interrotti da questo campo!`);
       if (victim.type === 'bastion') toast('Bastione abbattuto: la via della cittadella è più libera!');
       if (victim.queue) victim.queue = []; // Destruction releases reserved population.
       if (victim.type === 'keep') {
         if (victim.team === 'player') finish(false);
-        else if (!state.buildings.some(b => b.type === 'keep' && isEnemy(b.team) && alive(b))) finish(true);
+        else if (!isMission() && !state.buildings.some(b => b.type === 'keep' && isEnemy(b.team) && alive(b))) finish(true);
         else toast(`Fortezza dei ${teamName(victim.team)} distrutta: niente più rinforzi da quel fronte!`);
       }
     }
@@ -617,6 +705,7 @@
   }
   // Knights on a raid hunt workers and depots; they only fight soldiers that block them.
   function harassTarget(u) {
+    if (level.convoy && activeCart()) return activeCart();
     return state.units.filter(v => alive(v) && v.team === 'player' && v.type === 'worker')
       .concat(state.buildings.filter(b => alive(b) && b.team === 'player' && b.type === 'depot'))
       .sort((a, b) => dist(u, a) - dist(u, b))[0];
@@ -627,7 +716,7 @@
     if (u.type === 'knight' && job?.type === 'raid') {
       const prey = harassTarget(u);
       if (prey) {
-        const blocker = state.units.find(v => alive(v) && v.team !== u.team && v.type !== 'worker' && dist(u, v) <= 50);
+        const blocker = state.units.find(v => alive(v) && v.team !== u.team && v.type !== 'worker' && v.type !== 'cart' && dist(u, v) <= 50);
         performAttack(u, blocker || prey, dt); return;
       }
     }
@@ -682,7 +771,7 @@
   }
   function updateOutpost(dt) {
     for (const p of state.outposts) {
-      const teams = [...new Set(state.units.filter(u => alive(u) && u.type !== 'worker' && u.type !== 'ram' && u.type !== 'knight' && dist(u, p) <= p.radius).map(u => u.team))];
+      const teams = [...new Set(state.units.filter(u => alive(u) && u.type !== 'worker' && u.type !== 'ram' && u.type !== 'knight' && u.type !== 'cart' && dist(u, p) <= p.radius).map(u => u.team))];
       p.contested = teams.length > 1;
       const oldOwner = p.owner;
       if (teams.length === 1) {
@@ -740,7 +829,7 @@
     // Counterattacks replace the citadel's normal wave, never add another clock.
     const counter = !!level.counterattacks && !front.type && state.wave >= 3 && held.length > 0;
     const post = counter ? held[(Math.floor(state.wave / 3) - 1) % held.length] : state.outposts[front.post];
-    const viaOutpost = counter || (level.raidPattern === 'alternate' ? state.wave % 2 === 0 : state.wave % 4 >= 2);
+    const viaOutpost = isMission() || counter || (level.raidPattern === 'alternate' ? state.wave % 2 === 0 : state.wave % 4 >= 2);
     return { counter, postId: post.id, viaOutpost };
   }
   function startWave() {
@@ -763,7 +852,7 @@
     else if (live.length > 1) toast(`Tenaglia! Ondata ${state.wave}: ${total} nemici da ${live.map(f => f.name).join(' e ')}!`);
     else {
       const target = plan.counter ? state.outposts.find(p => p.id === plan.postId) : state.outposts[live[0].post];
-      const rams = live[0].troops === 'knight' ? ' Cavalieri in arrivo: proteggi contadini e magazzini!' : !live[0].type && level.ramFrom && state.wave >= level.ramFrom ? ' Attenzione: un ariete punta ai tuoi edifici!' : '';
+      const rams = live[0].troops === 'knight' ? (level.convoy ? ' Cavalieri in arrivo: proteggi il carro!' : ' Cavalieri in arrivo: proteggi contadini e magazzini!') : !live[0].type && level.ramFrom && state.wave >= level.ramFrom ? ' Attenzione: un ariete punta ai tuoi edifici!' : '';
       toast(plan.counter ? `Contrattacco della ${citadelName().toLowerCase()}: ${total} nemici verso ${target.name}!${rams}` : `Ondata ${state.wave}: ${total} nemici da ${live[0].name}, verso ${plan.viaOutpost ? target.name : 'il castello'}!${rams}`);
     }
     state.wave++; state.waveIn = Math.max(level.minWaveInterval ?? 38, 65 - state.wave * 2);
@@ -776,7 +865,7 @@
     $('chooseLevelBtn').classList.remove('hidden');
     $('modalTitle').textContent = won ? 'Il regno è salvo!' : 'Il castello è caduto';
     $('modalSubtitle').textContent = won
-      ? `Vittoria in ${fmtTime(state.time)}! Hai distrutto ${isSiege() ? `la ${citadelName().toLowerCase()}: l’assedio è finito` : level.kind === 'outpost' ? 'la fortezza nemica' : 'entrambe le fortezze rivali'}. Nemici sconfitti: ${state.stats.killed}. Risorse raccolte: ${state.stats.gathered}.`
+      ? `Vittoria in ${fmtTime(state.time)}! ${level.convoy ? 'Tre carri consegnati: la fortezza alleata è rifornita' : level.control ? 'I sigilli sono ricomposti: la frontiera è al sicuro' : `Hai distrutto ${isSiege() ? `la ${citadelName().toLowerCase()}: l’assedio è finito` : level.kind === 'outpost' ? 'la fortezza nemica' : 'entrambe le fortezze rivali'}`}. Nemici sconfitti: ${state.stats.killed}. Risorse raccolte: ${state.stats.gathered}.`
       : `La fortezza nemica ha trionfato. Hai resistito ${fmtTime(state.time)} e sconfitto ${state.stats.killed} nemici. Puoi riprovare con una strategia diversa.`;
     $('modalGuide').classList.add('hidden');
     $('modalButton').innerHTML = state.nextLevel ? 'Livello successivo <span aria-hidden="true">→</span>' : 'Riprova il livello <span aria-hidden="true">↻</span>';
@@ -796,6 +885,8 @@
       if (state.wavePlan.counter && alive(frontHome(waveFront()))) {
         const target = state.outposts.find(p => p.id === state.wavePlan.postId);
         toast(`Contrattacco fra ${Math.ceil(Math.max(0, state.waveIn))}s: difendi ${target.name}!`);
+      } else if (isMission() && live.length) {
+        toast(level.convoy && live.some(f => f.troops === 'knight') ? `Cavalieri fra ${Math.ceil(state.waveIn)}s: proteggete il carro!` : `Incursione fra ${Math.ceil(state.waveIn)}s: ${live.map(f => state.outposts[f.post].name).join(' e ')}.`);
       } else if (live.length > 1) toast(`Tenaglia fra ${Math.ceil(Math.max(0, state.waveIn))}s: ${live.map(f => f.name).join(' e ')} attaccheranno insieme!`);
     }
     if (state.waveIn <= 0) startWave();
@@ -812,15 +903,15 @@
       u.cooldown = Math.max(0, u.cooldown - dt);
       u.swing = Math.max(0, u.swing - dt);
       if (u.type === 'worker') updateWorker(u, dt);
-      else updateFighter(u, dt);
+      else if (u.type !== 'cart') updateFighter(u, dt);
       if (state.ended) return;
       u.x = clamp(u.x, 12, W - 12); u.y = clamp(u.y, 12, H - 12);
     }
     // Slight separation avoids a perfect stack of troops on the same point.
     for (let i = 0; i < state.units.length; i++) {
-      const a = state.units[i]; if (!alive(a)) continue;
+      const a = state.units[i]; if (!alive(a) || a.type === 'cart') continue;
       for (let j = i + 1; j < state.units.length; j++) {
-        const b = state.units[j]; if (!alive(b) || a.team !== b.team) continue;
+        const b = state.units[j]; if (!alive(b) || b.type === 'cart' || a.team !== b.team) continue;
         const dx = b.x - a.x, dy = b.y - a.y;
         const d2 = dx * dx + dy * dy;
         if (d2 < 440 && d2 > .1) {
@@ -833,6 +924,8 @@
     state.units = state.units.filter(u => alive(u));
     updateOutpost(dt);
     updateTowerDefenses(dt);
+    updateMissions(dt);
+    if (state.ended) { updateHud(); return; }
     for (const ping of state.pings) ping.life -= dt;
     state.pings = state.pings.filter(ping => ping.life > 0);
     for (const effect of state.effects) effect.life -= dt;
@@ -886,6 +979,9 @@
         const p = state.outposts[front.post];
         ctx.moveTo(hub.x,hub.y);ctx.bezierCurveTo(hub.x+280,hub.y,p.x-220,p.y,p.x,p.y);ctx.lineTo(front.x,front.y);
       }
+    }
+    if (level.convoy) {
+      level.convoy.route.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));
     }
     ctx.strokeStyle='#a5946e';ctx.lineWidth=93;ctx.lineCap='round';ctx.stroke();
     ctx.strokeStyle='#b5a37c';ctx.lineWidth=77;ctx.stroke();
@@ -1062,7 +1158,31 @@
     ctx.restore();
     if(u.hp<u.maxHp)drawHealth(u,u.x,u.y-44,34);
   }
+  function drawCart(u) {
+    ctx.save(); ctx.translate(u.x,u.y);
+    ellipse(0,10,32,15,'#20352d88');
+    if (state.selected.includes(u)) { ctx.strokeStyle='#f4dda5';ctx.lineWidth=2;ctx.strokeRect(-34,-34,68,62); }
+    for (const x of [-22,22]) for (const y of [-12,16]) {
+      ellipse(x,y,8,10,'#453b2b');ellipse(x,y,4,6,'#b28b50');
+    }
+    roundedRect(-26,-22,52,40,4,'#92643c');
+    roundedRect(-21,-32,42,39,8,'#e1c787');
+    ctx.strokeStyle='#907044';ctx.lineWidth=2;
+    for (const x of [-13,0,13]) {ctx.beginPath();ctx.moveTo(x,-30);ctx.lineTo(x,6);ctx.stroke();}
+    ctx.fillStyle='#695333';ctx.font='bold 18px Georgia';ctx.textAlign='center';ctx.fillText('◆',0,-4);
+    ctx.restore(); drawHealth(u,u.x,u.y-46,56);
+  }
+  function drawMissionRoute() {
+    if (!level.convoy) return;
+    const route=level.convoy.route, end=route[route.length-1];
+    ctx.save();ctx.strokeStyle='#ecd08c99';ctx.lineWidth=3;ctx.setLineDash([12,12]);ctx.beginPath();
+    route.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke();ctx.setLineDash([]);
+    drawKeep({x:end.x,y:end.y,team:'player'});
+    ctx.fillStyle='#f4dda5';ctx.font='bold 12px system-ui';ctx.textAlign='center';ctx.fillText('FORTEZZA ALLEATA · CONSEGNA',end.x,end.y+65);
+    ctx.restore();
+  }
   function drawUnit(u) {
+    if (u.type === 'cart') { drawCart(u); return; }
     if (u.type === 'ram') { drawRam(u); return; }
     if (u.type === 'knight') { drawKnight(u); return; }
     ctx.save();ctx.translate(u.x,u.y);
@@ -1140,7 +1260,7 @@
     ctx.fillText(p.contested ? (p.role ? 'TORRE CONTESA' : 'AVAMPOSTO CONTESO') : p.name.toUpperCase(), p.x, p.y + 62);
     if (p.role) {
       ctx.font='bold 21px Georgia';ctx.fillStyle=color;
-      ctx.fillText({market:'◆',arcane:'✧',guard:'➶',forge:'✹'}[p.role],p.x,p.y-28);
+      ctx.fillText({market:'◆',arcane:'✧',guard:'➶',forge:'✹',checkpoint:'⚑',sanctuary:'✦'}[p.role],p.x,p.y-28);
     }
     ctx.restore();
   }
@@ -1212,7 +1332,8 @@
     }
     for(const u of state.units) {
       if(!alive(u))continue;
-      mctx.fillStyle=teamColor(u.team);
+      mctx.fillStyle=u.type==='cart'?'#ffe4a1':teamColor(u.team);
+      if (u.type==='cart') {mctx.fillRect(u.x*sx-3,u.y*sy-3,6,6);continue;}
       mctx.fillRect(u.x*sx-1.5,u.y*sy-1.5,3,3);
     }
     for (const p of state.outposts) {
@@ -1236,6 +1357,11 @@
       mctx.strokeStyle='#ffcd7e';mctx.lineWidth=2;
       mctx.strokeRect(p.x*sx-9,p.y*sy-9,18,18);
     }
+    if (level.convoy) {
+      mctx.strokeStyle='#f4dda5';mctx.lineWidth=1;mctx.setLineDash([3,3]);mctx.beginPath();
+      level.convoy.route.forEach((p,i)=>i?mctx.lineTo(p.x*sx,p.y*sy):mctx.moveTo(p.x*sx,p.y*sy));mctx.stroke();mctx.setLineDash([]);
+      const end=level.convoy.route[level.convoy.route.length-1];mctx.strokeRect(end.x*sx-5,end.y*sy-5,10,10);
+    }
     mctx.strokeStyle='#f4e6b8';mctx.lineWidth=1.5;
     mctx.strokeRect(state.camera.x*sx,state.camera.y*sy,Math.min(mw,state.width*sx),Math.min(mh,state.height*sy));
   }
@@ -1245,6 +1371,7 @@
     ctx.fillStyle='#4e6b4a';ctx.fillRect(0,0,state.width,state.height);
     ctx.save();ctx.translate(-state.camera.x,-state.camera.y);
     ground();
+    drawMissionRoute();
     state.outposts.forEach(drawOutpost);
     for(const n of state.nodes){if(n.stock>0){if(n.type==='wood')drawTree(n);else drawGold(n);}}
     for(const b of [...state.buildings].sort((a,b)=>a.y-b.y))drawBuilding(b);
@@ -1265,14 +1392,14 @@
     state.running=true;state.ended=false;
     $('modal').classList.add('hidden');
     canvas.focus({preventScroll:true});
-    toast(state.time > 0 ? 'Partita ripresa.' : isSiege() ? `Le ${countWord(level.posts.filter(p => p.initialOwner).length)} torri proteggono la ${citadelName().toLowerCase()}. Conquista il Mercato per sostenere l’assedio.` : 'Raccogli risorse, prepara l’esercito e conquista l’avamposto.');
+    toast(state.time > 0 ? 'Partita ripresa.' : level.convoy ? 'Prepara la scorta. Il primo carro gratuito aspetta il tuo ordine alla base.' : level.control ? 'Conquista due santuari: il rituale richiede 180 secondi di controllo sicuro.' : isSiege() ? `Le ${countWord(level.posts.filter(p => p.initialOwner).length)} torri proteggono la ${citadelName().toLowerCase()}. Conquista il Mercato per sostenere l’assedio.` : 'Raccogli risorse, prepara l’esercito e conquista l’avamposto.');
   }
   function openHelp() {
     state.running=false;state.keys.clear();
     $('levelPicker').classList.add('hidden');
     $('chooseLevelBtn').classList.remove('hidden');
     $('modalTitle').textContent='Come si gioca';
-    $('modalSubtitle').textContent=isSiege() ? `Partita in pausa. ${level.description} I contrattacchi sono annunciati ${level.warningTime} secondi prima sulla minimappa.` : 'Partita in pausa. Conquista almeno un avamposto per reclutare maghi e depositare risorse. Ogni avamposto alleato e non conteso produce oro. Proteggi le unità a distanza con gli armigeri.';
+    $('modalSubtitle').textContent=isMission() ? `Partita in pausa. ${level.description}` : isSiege() ? `Partita in pausa. ${level.description} I contrattacchi sono annunciati ${level.warningTime} secondi prima sulla minimappa.` : 'Partita in pausa. Conquista almeno un avamposto per reclutare maghi e depositare risorse. Ogni avamposto alleato e non conteso produce oro. Proteggi le unità a distanza con gli armigeri.';
     $('modalGuide').classList.remove('hidden');
     $('modalButton').innerHTML='Torna alla partita <span aria-hidden="true">→</span>';
     $('modal').classList.remove('hidden');
@@ -1289,6 +1416,8 @@
     $('modal').classList.remove('hidden');
   }
   function setupInput() {
+    $('convoyBtn').addEventListener('click', convoyAction);
+    $('convoyFocusBtn').addEventListener('click', focusCart);
     $('modalButton').addEventListener('click', startGame);
     $('helpBtn').addEventListener('click', () => { if(!state.ended)openHelp(); });
     $('pauseBtn').addEventListener('click', () => { if(state.running)openHelp(); });
@@ -1343,7 +1472,7 @@
       }
       if(v.pointerType==='touch'){
         const thing=pick(world.x,world.y);
-        if(selectedAlive().some(u=>u.team==='player'&&isUnit(u)) &&
+        if(selectedAlive().some(u=>u.team==='player'&&commandable(u)) &&
           (!thing || thing.stock!==undefined || isEnemy(thing.team) || thing.type==='outpost' ||
             (thing.team==='player' && thing.progress<1) ||
             (['keep','depot'].includes(thing.type) && thing.team==='player' && state.selected.some(u=>u.type==='worker'&&u.carry)))) {
@@ -1406,6 +1535,6 @@
   }
   resize();restart();setupInput();requestAnimationFrame(frame);
   // Expose a tiny read-only diagnostic surface for automated smoke tests.
-  Object.defineProperty(window,'__rtsDebug',{value:{snapshot:()=>({level:level.id,width:W,height:H,popCap:state.popCap,shield:Math.round(citadelShield()*100),camps:state.buildings.filter(b=>b.type==='camp'&&alive(b)).length,waveIn:state.waveIn,counterTarget:state.wavePlan?.counter?state.wavePlan.postId:null,fortresses:state.buildings.filter(b=>b.type==='keep'&&isEnemy(b.team)&&alive(b)).length,outposts:state.outposts.map(p=>({name:p.name,owner:p.owner,contested:p.contested})),camera:{...state.camera},running:state.running,ended:state.ended,time:state.time,wood:state.wood,gold:state.gold,units:state.units.length,buildings:state.buildings.length,wave:state.wave,reserved:reservedPopulation(),outpost:state.outpost.owner,selected:state.selected.map(u=>u.type)})},configurable:false});
+  Object.defineProperty(window,'__rtsDebug',{value:{snapshot:()=>({level:level.id,mission:level.kind,delivered:state.convoy?.delivered??null,lostCarts:state.convoy?.lost??null,cart:activeCart()?{x:activeCart().x,y:activeCart().y,hp:activeCart().hp,moving:activeCart().moving,routeIndex:activeCart().routeIndex}:null,controlTime:state.controlTime,controlRate:controlRate(),width:W,height:H,popCap:state.popCap,shield:Math.round(citadelShield()*100),camps:state.buildings.filter(b=>b.type==='camp'&&alive(b)).length,waveIn:state.waveIn,counterTarget:state.wavePlan?.counter?state.wavePlan.postId:null,fortresses:state.buildings.filter(b=>b.type==='keep'&&isEnemy(b.team)&&alive(b)).length,outposts:state.outposts.map(p=>({name:p.name,owner:p.owner,contested:p.contested})),camera:{...state.camera},running:state.running,ended:state.ended,time:state.time,wood:state.wood,gold:state.gold,units:state.units.length,buildings:state.buildings.length,wave:state.wave,reserved:reservedPopulation(),outpost:state.outpost.owner,selected:state.selected.map(u=>u.type)})},configurable:false});
 })();
 

@@ -11,7 +11,7 @@
   <script src="./game.js" defer></script>
 </head>
 <body>
-  <main class="game-shell" aria-label="Terre di Confine, gioco di strategia in tempo reale">
+  <main id="gameShell" class="game-shell" aria-label="Terre di Confine, gioco di strategia in tempo reale">
     <canvas id="game" aria-label="Mappa di gioco" tabindex="0"></canvas>
 
     <header class="topbar">
@@ -40,7 +40,7 @@
     <div class="quick-actions" aria-label="Selezione rapida"><button id="cancelOrderBtn" class="hidden">Annulla ordine</button><button id="idleBtn" title="Contadino inattivo (I)">⚒ Inattivi: 3</button><button id="armyBtn" title="Seleziona l’esercito (G)">⚔ Esercito</button></div>
 
     <div class="bottom-left"><div id="toast" class="toast" role="status" aria-live="polite"></div><div class="controls-hint"><span class="key">W A S D</span> Sposta mappa <span class="hint-sep">·</span> <span class="key">SPAZIO</span> Torna alla base <span class="hint-sep">·</span> <span class="key">CTRL 1–5</span> Gruppi</div></div>
-    <aside class="minimap-container" aria-label="Minimappa"><div class="minimap-header"><span>✧ &nbsp; IL REGNO</span><span id="waveText">ONDATA 01</span><span id="waveNotice" class="wave-notice" role="status" aria-live="polite"></span></div><canvas id="minimap" width="240" height="156" aria-label="Tocca per spostare la visuale"></canvas></aside>
+    <aside class="minimap-container" aria-label="Minimappa"><div class="minimap-header"><span>✧ &nbsp; IL REGNO</span><span id="waveText">ONDATA 01</span><span id="waveNotice" class="wave-notice" role="status" aria-live="polite"></span></div><div id="missionPanel" class="mission-panel hidden"><span id="missionStatus"></span><progress id="missionProgress" max="3" value="0" aria-label="Progresso missione"></progress><div id="convoyControls" class="convoy-controls hidden"><button id="convoyFocusBtn">Centra carro</button><button id="convoyBtn">Avvia / riprendi</button></div></div><canvas id="minimap" width="240" height="156" aria-label="Tocca per spostare la visuale"></canvas></aside>
     <div id="placementNotice" class="placement-notice hidden">⌂ &nbsp; Scegli dove costruire la caserma <span>ESC per annullare</span></div>
     <div id="dragBox" class="drag-box hidden"></div>
 
@@ -57,6 +57,8 @@
             <option value="3">3 · L’assedio delle tre torri</option>
             <option value="4">4 · La marca di ferro</option>
             <option value="5">5 · La corona usurpata</option>
+            <option value="6">6 · La via dei rifornimenti</option>
+            <option value="7">7 · I sigilli della frontiera</option>
           </select>
         </div>
         <p id="modalSubtitle" class="modal-subtitle">Raccogli risorse, guida armigeri e arcieri, conquista l’avamposto per reclutare maghi e assalta la fortezza rivale.</p>

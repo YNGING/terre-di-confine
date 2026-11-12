@@ -2,9 +2,9 @@
 
 Un RTS in italiano, **senza librerie esterne e senza backend**. HTML5, CSS e JavaScript con Canvas 2D: apri `index.html` oppure pubblica i file su GitHub Pages.
 
-## Cinque livelli
+## Sette livelli
 
-Il selettore iniziale permette di giocare tutti e cinque i livelli. Vincendo uno dei primi quattro appare **Livello successivo**; dopo una sconfitta si riprova il livello corrente. **Ricomincia** azzera il livello corrente e riapre il selettore. Da pausa o fine partita, **Scegli livello · abbandona la partita** torna al selettore azzerando la partita in corso. Non sono richiesti sblocco o salvataggi.
+Il selettore iniziale permette di giocare tutti e sette i livelli. Vincendo uno dei primi sei appare **Livello successivo**; dopo una sconfitta si riprova il livello corrente. **Ricomincia** azzera il livello corrente e riapre il selettore. Da pausa o fine partita, **Scegli livello · abbandona la partita** torna al selettore azzerando la partita in corso. Non sono richiesti sblocco o salvataggi.
 
 | | Livello 1 · Terre di Confine | Livello 2 · La frontiera contesa | Livello 3 · L’assedio delle tre torri | Livello 4 · La marca di ferro | Livello 5 · La corona usurpata |
 | --- | --- | --- | --- | --- | --- |
@@ -64,9 +64,9 @@ Dopo la vittoria si passa al quinto livello.
 
 ### La corona usurpata
 
-Il livello finale si gioca sulla mappa più grande: 4200 × 2800, popolazione 36, partenza con 220 legno e 100 oro. La **Corona usurpata** difende la sua cittadella da 2600 PV con quattro torri (Mercato, Arcana, Guardia e Forgia, 15% di scudo ciascuna) e con un secondo anello di difese.
+Il quinto livello si gioca sulla mappa più grande: 4200 × 2800, popolazione 36, partenza con 220 legno e 100 oro. La **Corona usurpata** difende la sua cittadella da 2600 PV con quattro torri (Mercato, Arcana, Guardia e Forgia, 15% di scudo ciascuna) e con un secondo anello di difese.
 
-- **Magazzino** (solo in questo livello): 80 legno, tasto **M** o pulsante del contadino, costruzione in 8 secondi. Una volta completato, i contadini vi depositano legno e oro come al castello. Il deposito più vicino viene scelto da solo.
+- **Magazzino** (disponibile dal livello 5): 80 legno, tasto **M** o pulsante del contadino, costruzione in 8 secondi. Una volta completato, i contadini vi depositano legno e oro come al castello. Il deposito più vicino viene scelto da solo.
 - **Basi avanzate:** caserme e magazzini si possono costruire vicino al castello **oppure** fra 150 e 380 di distanza da una torre alleata e non contesa. Durante il posizionamento le aree consentite sono tratteggiate.
 - **Giacimenti ricchi:** quattro giacimenti più grandi e luminosi (legno 1000, oro 900, contro 500 e 380), anche sulla minimappa. Si trovano nelle zone contese: vicino al Mulino, sotto la Torre di guardia e fra i due campi.
 - **Mulino:** un quinto punto di controllo, **neutrale** all’inizio, a sud-ovest. Dà 8 oro ogni 8 secondi e fa da deposito. Non conta per lo scudo.
@@ -75,11 +75,42 @@ Il livello finale si gioca sulla mappa più grande: 4200 × 2800, popolazione 36
 - **Guardia reale:** la prima volta che la cittadella scende sotto metà vita esce un **Campione** (650 PV, 30 danni) con quattro predoni. L’avviso compare in alto e sulla minimappa.
 - **Ondate:** Scuderie, Campo nord, Campo sud, Cittadella, Scuderie, poi i due campi a tenaglia, e così via. Arieti dalla quinta ondata, contrattacchi annunciati, intervallo minimo 34 secondi.
 
-È l’ultimo livello: dopo la vittoria si può rigiocarlo o tornare al selettore.
+Dopo la vittoria si passa al sesto livello, La via dei rifornimenti.
+
+### La via dei rifornimenti
+
+Il livello 6 cambia obiettivo: **consegna tre carri di rifornimenti** alla fortezza alleata sul lato orientale, mantenendo in vita il tuo castello. Mappa 4000 × 2200, popolazione 38, 240 legno e 120 oro iniziali. Caserme e magazzini possono essere costruiti anche vicino ai presidi alleati non contesi.
+
+- **Un carro alla volta**, con 480 PV e velocità 60. Il primo è gratuito e attende alla base; dopo ogni consegna riuscita ne appare gratuitamente un altro, sempre fermo alla partenza. Non c’è un limite di tempo globale.
+- I pulsanti **Avvia / riprendi**, **Ferma carro** e **Centra carro**, sopra la minimappa, comandano il convoglio. Puoi fermarlo anche a metà strada. Segue il percorso tratteggiato, senza deviazioni comandabili con gli ordini militari.
+- Le soste sono **Presidio del guado** e **Presidio delle colline**. Il carro si ferma automaticamente a ciascuna e aspetta un ordine; per ripartire il presidio deve essere **alleato e non conteso**. Può arrivare a un presidio ancora nemico, ma serviranno le truppe per conquistarlo. Il presidio perso dopo la partenza non interrompe il tratto già iniziato.
+- I presidi partono nemici. Una volta conquistati danno **8 oro ogni 8s**, deposito, accesso ai maghi e spazio per basi avanzate. Oro e deposito si fermano nelle zone contese.
+- Il carro **non combatte, non conquista, non occupa popolazione e non entra nei gruppi militari**. È bersagliabile dai nemici e riceve l’avviso di attacco sulla minimappa. Come le unità alleate, può recuperare vita vicino al castello fuori combattimento.
+- Perdere un carro **non termina la missione**: il pulsante **Sostituisci** costa **80 legno e 40 oro** e prepara un nuovo carro fermo alla base. Le consegne già completate restano valide. L’oro dei presidi aiuta a finanziare eventuali sostituzioni.
+- Le **Scuderie dei predoni** inviano fino a 3 cavalieri, che danno priorità al carro ma combattono la scorta che li intercetta da vicino. Gli altri due campi attaccano i presidi. Prima ondata a 80s, intervallo minimo 42s; calendario Scuderie, Campo nord, Campo sud, Scuderie, tenaglia dei due campi. Le incursioni sono annunciate 20s prima.
+- Distruggere un campo lascia vuoti i suoi turni successivi; le truppe già presenti restano attive. Eliminare tutti i nemici non sostituisce le tre consegne.
+
+La fortezza alleata di destinazione è il punto di consegna, non una seconda base da gestire. La barra sopra la minimappa misura le consegne; il contatore dei PV e lo stato indicano la situazione del carro. Dopo la terza consegna si passa al livello 7.
+
+### I sigilli della frontiera
+
+Il livello 7 conclude la campagna con il **controllo territoriale**: accumula **180 secondi di rituale** possedendo almeno due santuari non contesi. Mappa 4200 × 2800, popolazione 40, partenza con 240 legno e 120 oro.
+
+| Situazione | Progresso del rituale |
+| --- | --- |
+| Meno di due santuari alleati non contesi | Fermo; il progresso già accumulato rimane |
+| Due santuari alleati non contesi | 1 secondo di progresso per secondo di partita |
+| Tutti e tre alleati non contesi | 1,5 secondi di progresso per secondo: completamento in 120s se mantenuti sempre |
+
+- **Santuario dell’alba** a nord e **Santuario del crepuscolo** a sud partono neutrali; il **Santuario del meriggio** a est parte nemico.
+- Ogni santuario alleato offre **6 oro ogni 8s**, deposito, maghi e costruzioni avanzate. I santuari contesi non contano per il rituale, non producono oro e non ricevono risorse. È sufficiente mantenerne la proprietà: non serve una guarnigione per attivare il conteggio, ma difenderli resta necessario.
+- Tre accampamenti attaccano i rispettivi santuari e, dopo averli conquistati, proseguono verso il castello. Il Campo orientale arriva a 7 unità, gli altri a 5. Prima ondata a 75s, intervallo minimo 38s; calendario nord, sud, est, tenaglia nord+sud, est. Gli obiettivi sono annunciati 20s prima.
+- Gli accampamenti sono distruttibili per ridurre la pressione, ma **la vittoria dipende dal rituale**, non dalla loro eliminazione. La barra e l’obiettivo mostrano progresso, santuari validi e velocità corrente.
+- Perdere il castello comporta la sconfitta. La pausa ferma il rituale e le ondate. Ricominciare azzera il progresso; dopo la vittoria puoi rigiocare il settimo livello o tornare al selettore.
 
 ## Come si gioca (livello 1)
 
-1. Premi **Inizia la partita**. Hai tre contadini e due armigeri.
+1. Premi **Inizia il livello**. Hai tre contadini e due armigeri.
 2. Seleziona i contadini e ordina la raccolta con clic destro su boschi e miniere. Trasportano fino a 18 risorse, le depositano e ripartono. A giacimento esaurito consegnano l’ultimo carico e cercano un’altra fonte dello stesso tipo.
 3. Con un contadino, costruisci una **caserma** vicino al castello: 110 legno, 45 oro. Puoi riprendere un lavoro interrotto ordinando a un contadino di lavorare sulla caserma incompleta.
 4. Recluta armigeri e arcieri. Le code contengono fino a cinque unità per edificio; risorse e posti di popolazione sono prenotati subito. Il contatore mostra `unità vive + prenotate / 18`.
@@ -132,11 +163,12 @@ Il **mago** ha 58 PV e lancia automaticamente un’esplosione ogni 3 secondi: 30
 | Tornare alla base | Spazio |
 | Centrare l’avamposto | Pulsante di stato dell’avamposto |
 | Costruire la caserma | B, con un contadino selezionato |
-| Costruire un magazzino (livello 5) | M, con un contadino selezionato |
+| Costruire un magazzino (livelli 5–7) | M, con un contadino selezionato |
 | Reclutare contadino / armigero | R, con castello / caserma selezionati |
 | Reclutare arciere / mago | Q / E, con caserma selezionata |
 | Punto di raduno | Clic destro con l’edificio selezionato, o pulsante dedicato e clic; dal castello, su una risorsa per la raccolta automatica |
 | Annullare l’ultima unità in coda | Pulsante nell’edificio; rimborso completo |
+| Avviare, fermare, riprendere o centrare il carro (livello 6) | Pulsanti sopra la minimappa |
 | Pausa / ripresa | P oppure pulsante pausa e **Torna alla partita** |
 | Aiuto con pausa | H o pulsante ? |
 | Annullare un ordine in attesa della destinazione | Esc o **Annulla ordine** |
@@ -167,11 +199,11 @@ Per eseguire i test di regressione, con Node.js 22 o superiore e senza installar
 node --test tests/game.test.cjs
 ```
 
-I test verificano raccolta ed esaurimento, arrivi diagonali e raccolta prolungata, prenotazione della popolazione, code e rimborsi, ritirata, mantenimento posizione, attacchi a distanza, danni ad area, conquista e perdita dell’avamposto, ondate, assalto e riavvio. I test dei livelli successivi coprono inoltre conquista fra tre fazioni, depositi multipli, limite 24 con prenotazioni, attacchi fra rivali, ondate alternate, eliminazione dei fronti e passaggio fra livelli. Per l’assedio verificano anche bonus distinti delle torri, scudo dinamico, tiro della Guardia, contrattacchi annunciati, limite 28 e vittoria con un esercito preparato. Per la marca di ferro verificano scudo da quattro torri, Forgia, tenaglie, arieti corazzati, limite 30 e passaggio dal terzo livello; per la corona usurpata mappa e risorse, magazzini e basi avanzate, cavalieri, bastioni, Guardia reale e assalto con 36 unità; per gli aiuti al comando cura, avvisi, messaggi, raduno su risorse, gruppi e depositi. Usano una simulazione accelerata in una VM; le interazioni e il disegno richiedono anche una prova nel browser.
+I test verificano raccolta ed esaurimento, arrivi diagonali e raccolta prolungata, prenotazione della popolazione, code e rimborsi, ritirata, mantenimento posizione, attacchi a distanza, danni ad area, conquista e perdita dell’avamposto, ondate, assalto e riavvio. I test dei livelli successivi coprono inoltre conquista fra tre fazioni, depositi multipli, limite 24 con prenotazioni, attacchi fra rivali, ondate alternate, eliminazione dei fronti e passaggio fra livelli. Per l’assedio verificano anche bonus distinti delle torri, scudo dinamico, tiro della Guardia, contrattacchi annunciati, limite 28 e vittoria con un esercito preparato. Per la marca di ferro verificano scudo da quattro torri, Forgia, tenaglie, arieti corazzati, limite 30 e passaggio dal terzo livello; per la corona usurpata mappa e risorse, magazzini e basi avanzate, cavalieri, bastioni, Guardia reale e assalto con 36 unità; per gli aiuti al comando cura, avvisi, messaggi, raduno su risorse, gruppi e depositi. Per i livelli 6–7 coprono inoltre percorso e soste del convoglio, sostituzioni, popolazione, cavalieri contro la scorta, consegne, santuari contesi, progresso persistente, accelerazione del rituale e passaggio fra missioni. Usano una simulazione accelerata in una VM; le interazioni e il disegno richiedono anche una prova nel browser.
 
-`rules.js` raccoglie costi, statistiche e le configurazioni `RTS_LEVELS` (mappe, popolazione, risorse iniziali, avamposti, fortezze e calendario delle ondate) per facilitare il bilanciamento. Il comportamento di ogni livello dipende dai suoi campi (`kind`, `waveIntro`/`waveOrder` con tenaglie, `minWaveInterval`, `shieldPerTower`, `counterattacks`, `ramFrom`, `buildings`, `forwardBuild`, `bastions`, `lastStand`…), quindi un nuovo livello si aggiunge soprattutto come configurazione. `game.js` gestisce simulazione, comandi e Canvas. La diagnostica `window.__rtsDebug.snapshot()` restituisce solo un riepilogo dello stato.
+`rules.js` raccoglie costi, statistiche e le configurazioni `RTS_LEVELS` (mappe, popolazione, risorse iniziali, avamposti, fortezze e calendario delle ondate) per facilitare il bilanciamento. Il comportamento di ogni livello dipende dai suoi campi (`kind`, `waveIntro`/`waveOrder` con tenaglie, `minWaveInterval`, `shieldPerTower`, `counterattacks`, `ramFrom`, `buildings`, `forwardBuild`, `bastions`, `lastStand`, `convoy`, `control`…), quindi un nuovo livello si aggiunge soprattutto come configurazione. `game.js` gestisce simulazione, comandi e Canvas. La diagnostica `window.__rtsDebug.snapshot()` restituisce solo un riepilogo dello stato.
 
-Il progetto resta single-player con cinque mappe fisse, movimento diretto e IA a ondate. Ricerca dei percorsi intorno agli ostacoli, nebbia di guerra, salvataggi e multiplayer sono sviluppi futuri. Il bilanciamento può essere ulteriormente affinato con partite reali.
+Il progetto resta single-player con sette mappe fisse, movimento diretto e IA a ondate. Ricerca dei percorsi intorno agli ostacoli, nebbia di guerra, salvataggi e multiplayer sono sviluppi futuri. Il bilanciamento può essere ulteriormente affinato con partite reali.
 
 ```text
 terre-di-confine/

@@ -17,7 +17,8 @@
       ram: { hp: 320, speed: 46, damage: 55, attackTime: 2.4, range: 34, arrowArmor: .5 },
       // Fast raiders that hunt workers and depots far from the castle.
       knight: { hp: 110, speed: 150, damage: 13, attackTime: 1, range: 28 },
-      champion: { hp: 650, speed: 70, damage: 30, attackTime: 1.2, range: 32 }
+      champion: { hp: 650, speed: 70, damage: 30, attackTime: 1.2, range: 32 },
+      cart: { hp: 480, speed: 60, damage: 0, attackTime: 1, range: 0 }
     },
     // Player constructions; a level lists the ones it allows (default: barracks only).
     buildings: {
@@ -33,7 +34,7 @@
     population: 18, queueLimit: 5, firstWave: 75, carryCapacity: 18,
     outpost: { x: 1200, y: 795, radius: 135, captureTime: 12, incomeTime: 8, gold: 8 },
     names: { worker: 'Contadino', soldier: 'Armigero', archer: 'Arciere', mage: 'Mago',
-      raider: 'Predone', ram: 'Ariete', knight: 'Cavaliere', champion: 'Campione', depot: 'Magazzino', bastion: 'Bastione', keep: 'Castello', barracks: 'Caserma', outpost: 'Avamposto' }
+      cart: 'Carro di rifornimenti', raider: 'Predone', ram: 'Ariete', knight: 'Cavaliere', champion: 'Campione', depot: 'Magazzino', bastion: 'Bastione', keep: 'Castello', barracks: 'Caserma', outpost: 'Avamposto' }
   };
   // Each scenario owns its map and pacing; unit balance is shared.
   window.RTS_LEVELS = [
@@ -145,6 +146,57 @@
         [600,450], [600,2450], [1900,2450], [3150,800], [1400,2050], [900,2560,1000]],
       gold: [[900,1600], [1400,850], [1450,1950], [1850,1450], [2400,950], [2650,500],
         [2700,2350], [3600,800], [3600,2000], [1300,2560,900], [2350,2400,900], [2600,1750,900]]
+    },
+    {
+      id: 6, name: 'La via dei rifornimenti', kind: 'escort', width: 4000, height: 2200, population: 38,
+      firstWave: 80, waveCap: 10, campHp: 750, minWaveInterval: 42,
+      start: { wood: 240, gold: 120 }, warningTime: 20, waveOrder: [2, 0, 1, 2, [0, 1]],
+      buildings: ['barracks', 'depot'], forwardBuild: true, factionName: 'Predoni della strada',
+      description: 'Scorta tre carri fino alla fortezza alleata. Avvia, ferma e riprendi il carro dai pulsanti sopra la minimappa. Ai due presidi si ferma: conquistali per ripartire. Le consegne successive sono gratuite; sostituire un carro perso costa 80 legno e 40 oro. Nessun limite di tempo. Popolazione: 38; il carro non occupa posti.',
+      missionGuide: 'Presidi: oro, deposito, maghi e basi avanzate. Il carro non combatte e non conquista. Mantieni la scorta vicina; elimina le Scuderie per fermare i cavalieri.',
+      convoy: { goal: 3, replacementCost: { wood: 80, gold: 40 },
+        route: [{ x: 650, y: 1100, name: 'Partenza' },
+          { x: 1400, y: 900, name: 'Presidio del guado', post: 0 },
+          { x: 2450, y: 1350, name: 'Presidio delle colline', post: 1 },
+          { x: 3550, y: 1100, name: 'Fortezza alleata' }] },
+      player: [450, 1100],
+      enemies: [{ team: 'enemy', type: 'camp', name: 'Campo nord', x: 2050, y: 380, post: 0 },
+        { team: 'enemy', type: 'camp', name: 'Campo sud', x: 2900, y: 1850, post: 1 },
+        { team: 'enemy', type: 'camp', name: 'Scuderie dei predoni', x: 3200, y: 420, post: 1, hp: 700, troops: 'knight', cap: 3 }],
+      posts: [{ name: 'Presidio del guado', role: 'checkpoint', x: 1400, y: 900, gold: 8, initialOwner: 'enemy',
+          bonus: '8 oro ogni 8s, deposito e maghi. Basi avanzate. Per far ripartire il carro deve essere alleato e non conteso.' },
+        { name: 'Presidio delle colline', role: 'checkpoint', x: 2450, y: 1350, gold: 8, initialOwner: 'enemy',
+          bonus: '8 oro ogni 8s, deposito e maghi. Basi avanzate. Per far ripartire il carro deve essere alleato e non conteso.' }],
+      wood: [[760,650], [780,1480], [1100,430], [1120,1750], [1500,550], [1750,1120],
+        [1800,1750], [2200,700], [2250,1570], [2750,950], [3100,1550], [3600,650],
+        [3700,1600], [1000,2000], [1650,2050], [2520,2000], [3380,1920], [1850,790,1000]],
+      gold: [[850,1200], [1180,700], [1510,1330], [1950,1500], [2200,1050,900], [2650,1580],
+        [2930,700], [3420,1440], [3650,1920]]
+    },
+    {
+      id: 7, name: 'I sigilli della frontiera', kind: 'control', width: 4200, height: 2800, population: 40,
+      firstWave: 75, waveCap: 12, campHp: 850, minWaveInterval: 38,
+      start: { wood: 240, gold: 120 }, warningTime: 20, waveOrder: [0, 2, 1, [0, 2], 1],
+      buildings: ['barracks', 'depot'], forwardBuild: true, factionName: 'Custodi spezzati',
+      description: 'Controlla almeno due santuari non contesi per accumulare 180 secondi e ricomporre i sigilli. Con tutti e tre il progresso corre a ×1,5. Con meno di due si ferma, senza azzerarsi. Difendi più fronti e abbatti gli accampamenti per ridurre gli attacchi. Popolazione: 40.',
+      missionGuide: 'Ogni santuario alleato offre 6 oro ogni 8s, deposito, maghi e basi avanzate. I santuari contesi non contano per il rituale. Il progresso già ottenuto resta anche quando perdi terreno.',
+      control: { goal: 180, required: 2, allRate: 1.5 },
+      player: [500, 1400],
+      enemies: [{ team: 'enemy', type: 'camp', name: 'Campo del nord', x: 2400, y: 400, post: 0 },
+        { team: 'enemy', type: 'camp', name: 'Campo orientale', x: 3600, y: 1400, post: 1, cap: 7 },
+        { team: 'enemy', type: 'camp', name: 'Campo del sud', x: 2400, y: 2400, post: 2 }],
+      posts: [{ name: 'Santuario dell’alba', role: 'sanctuary', x: 1400, y: 800, gold: 6,
+          bonus: 'Sigillo del nord. 6 oro ogni 8s, deposito, maghi e basi avanzate. Conta per il rituale solo se alleato e non conteso.' },
+        { name: 'Santuario del meriggio', role: 'sanctuary', x: 2650, y: 1400, gold: 6, initialOwner: 'enemy',
+          bonus: 'Sigillo orientale. 6 oro ogni 8s, deposito, maghi e basi avanzate. Conta per il rituale solo se alleato e non conteso.' },
+        { name: 'Santuario del crepuscolo', role: 'sanctuary', x: 1400, y: 2000, gold: 6,
+          bonus: 'Sigillo del sud. 6 oro ogni 8s, deposito, maghi e basi avanzate. Conta per il rituale solo se alleato e non conteso.' }],
+      wood: [[850,1000], [850,1810], [1080,450], [1080,2330], [1730,1090], [1730,1680],
+        [1920,420], [1920,2350], [2250,1050], [2250,1750], [3000,1000], [3000,1800],
+        [3400,650], [3400,2150], [3800,420], [3800,2500], [580,550], [580,2300],
+        [1600,520,1000], [1600,2290,1000], [2770,700], [2770,2200]],
+      gold: [[900,1510], [1180,1100], [1180,1690], [1750,650], [1750,2150], [2100,1400,900],
+        [2800,1100,900], [2800,1700], [3250,650], [3250,2150], [3900,1400]]
     }
   ];
 })();
