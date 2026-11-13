@@ -2,6 +2,7 @@
 (() => {
   'use strict';
   window.RTS_RULES = {
+    repair: { interval: .5, wood: 1, hp: 5, range: 70 },
     costs: {
       barracks: { wood: 110, gold: 45 }, worker: { wood: 45, gold: 0 },
       soldier: { wood: 35, gold: 30 }, archer: { wood: 45, gold: 40 }, mage: { wood: 60, gold: 100 },
@@ -197,6 +198,108 @@
         [1600,520,1000], [1600,2290,1000], [2770,700], [2770,2200]],
       gold: [[900,1510], [1180,1100], [1180,1690], [1750,650], [1750,2150], [2100,1400,900],
         [2800,1100,900], [2800,1700], [3250,650], [3250,2150], [3900,1400]]
+    },
+    {
+      id: 8,
+      name: "L’ultima resistenza",
+      kind: "survival",
+      width: 3200,
+      height: 2200,
+      population: 40,
+      firstWave: 90,
+      start: {"wood": 350, "gold": 250},
+      buildings: ["barracks", "depot"],
+      forwardBuild: true,
+      repairs: true,
+      magesUnlocked: true,
+      factionName: "L’orda del confine",
+      player: [1600, 1100],
+      enemies: [
+        {"team": "enemy", "name": "Nord", "x": 1600, "y": 60, "post": 0, "spawnOnly": true},
+        {"team": "enemy", "name": "Est", "x": 3120, "y": 1100, "post": 1, "spawnOnly": true},
+        {"team": "enemy", "name": "Sud", "x": 1600, "y": 2140, "post": 1, "spawnOnly": true},
+        {"team": "enemy", "name": "Ovest", "x": 80, "y": 1100, "post": 0, "spawnOnly": true}
+      ],
+      posts: [
+        {"name": "Mercato della frontiera", "role": "market", "x": 1600, "y": 600, "gold": 10, "bonus": "10 oro ogni 8s e deposito finché alleato e non conteso."},
+        {"name": "Mulino della valle", "role": "market", "x": 1600, "y": 1600, "gold": 0, "wood": 12, "bonus": "12 legno ogni 8s e deposito finché alleato e non conteso."}
+      ],
+      wood: [[1350, 900, 1000], [1800, 1350, 1000], [1200, 1200], [2000, 900], [1100, 400], [2100, 1800], [700, 1400], [2600, 650], [2400, 1850], [600, 900]],
+      gold: [[1850, 950, 900], [1300, 1350, 900], [1100, 550], [2200, 1650], [650, 1700], [2600, 450]],
+      survival: {
+        rest: 35,
+        majorRest: 60,
+        reward: {"wood": 60, "gold": 45},
+        majorReward: {"wood": 100, "gold": 70},
+        waves: [
+          {"name": "Gli esploratori", "major": false, "groups": [{"entry": 0, "target": "keep", "units": {"raider": 4}}]},
+          {"name": "Pioggia di frecce", "major": false, "groups": [{"entry": 1, "target": "keep", "units": {"raider": 4, "archer": 2}}]},
+          {"name": "La razzia", "major": false, "groups": [{"entry": 2, "target": "keep", "units": {"knight": 3, "raider": 3}}]},
+          {"name": "Il primo assedio", "major": true, "groups": [{"entry": 0, "target": "keep", "units": {"raider": 5, "archer": 3}}, {"entry": 1, "target": "keep", "units": {"raider": 3, "mage": 1}}]},
+          {"name": "Gli arcieri del confine", "major": false, "groups": [{"entry": 3, "target": "keep", "units": {"raider": 4, "archer": 6}}]},
+          {"name": "Il battente", "major": false, "groups": [{"entry": 1, "target": "keep", "units": {"ram": 1, "raider": 5, "archer": 3}}]},
+          {"name": "Fuoco arcano", "major": false, "groups": [{"entry": 0, "target": "keep", "units": {"mage": 2, "raider": 5}}, {"entry": 2, "target": "keep", "units": {"knight": 3}}]},
+          {"name": "La tenaglia", "major": true, "groups": [{"entry": 0, "target": "keep", "units": {"ram": 1, "raider": 5, "archer": 3}}, {"entry": 2, "target": "keep", "units": {"ram": 1, "raider": 4, "mage": 1}}]},
+          {"name": "Nessun riparo", "major": false, "groups": [{"entry": 1, "target": "keep", "units": {"knight": 4}}, {"entry": 3, "target": "keep", "units": {"raider": 6, "archer": 4}}]},
+          {"name": "Il cerchio dei maghi", "major": false, "groups": [{"entry": 0, "target": "keep", "units": {"mage": 3, "raider": 6, "archer": 4}}]},
+          {"name": "Le porte tremano", "major": false, "groups": [{"entry": 3, "target": "keep", "units": {"ram": 2, "raider": 6}}, {"entry": 1, "target": "keep", "units": {"knight": 4, "archer": 4}}]},
+          {"name": "L’ultima resistenza", "major": true, "groups": [{"entry": 0, "target": "keep", "units": {"champion": 1, "raider": 6, "mage": 2}}, {"entry": 2, "target": "keep", "units": {"ram": 2, "raider": 6, "archer": 4}}]}
+        ]
+      },
+      description: "Resisti a 12 ondate e salva il castello. Hai 90s per prepararti; ogni ondata parte solo dopo la sconfitta della precedente e una tregua di 35s (60s dopo un grande assalto). Puoi anticiparla. Assalti maggiori alle ondate 4, 8 e 12. Popolazione: 40.",
+      missionGuide: "Conquista Mercato e Mulino per rendite rinnovabili. Ogni ondata superata offre legno e oro. Maghi disponibili subito. Contadini: Ripara (T), poi un edificio danneggiato; 1 legno ripristina fino a 5 PV. Gli ingressi nemici non sono edifici da distruggere."
+    },
+    {
+      id: 9,
+      name: "La notte dei fuochi",
+      kind: "survival",
+      width: 3200,
+      height: 2200,
+      population: 42,
+      firstWave: 90,
+      start: {"wood": 350, "gold": 250},
+      buildings: ["barracks", "depot"],
+      forwardBuild: true,
+      repairs: true,
+      magesUnlocked: true,
+      factionName: "L’orda del confine",
+      player: [1600, 1100],
+      enemies: [
+        {"team": "enemy", "name": "Nord", "x": 1600, "y": 60, "post": 0, "spawnOnly": true},
+        {"team": "enemy", "name": "Est", "x": 3120, "y": 1100, "post": 1, "spawnOnly": true},
+        {"team": "enemy", "name": "Sud", "x": 1600, "y": 2140, "post": 1, "spawnOnly": true},
+        {"team": "enemy", "name": "Ovest", "x": 80, "y": 1100, "post": 0, "spawnOnly": true}
+      ],
+      posts: [
+        {"name": "Mercato della frontiera", "role": "market", "x": 1600, "y": 600, "gold": 10, "bonus": "10 oro ogni 8s e deposito finché alleato e non conteso."},
+        {"name": "Mulino della valle", "role": "market", "x": 1600, "y": 1600, "gold": 0, "wood": 12, "bonus": "12 legno ogni 8s e deposito finché alleato e non conteso."}
+      ],
+      wood: [[1350, 900, 1000], [1800, 1350, 1000], [1200, 1200], [2000, 900], [1100, 400], [2100, 1800], [700, 1400], [2600, 650], [2400, 1850], [600, 900]],
+      gold: [[1850, 950, 900], [1300, 1350, 900], [1100, 550], [2200, 1650], [650, 1700], [2600, 450]],
+      survival: {
+        rest: 35,
+        majorRest: 60,
+        reward: {"wood": 60, "gold": 45},
+        majorReward: {"wood": 100, "gold": 70},
+        waves: [
+          {"name": "Fuochi a nord", "major": false, "groups": [{"entry": 0, "target": "harvest", "units": {"raider": 4}}]},
+          {"name": "La milizia sotto attacco", "major": false, "groups": [{"entry": 1, "target": "militia", "units": {"raider": 4, "archer": 2}}]},
+          {"name": "Le strade in fiamme", "major": false, "groups": [{"entry": 3, "target": "harvest", "units": {"knight": 3}}, {"entry": 2, "target": "militia", "units": {"raider": 4}}]},
+          {"name": "Tre fronti", "major": true, "groups": [{"entry": 0, "target": "harvest", "units": {"raider": 4, "archer": 2}}, {"entry": 1, "target": "militia", "units": {"raider": 4, "archer": 2}}, {"entry": 2, "target": "keep", "units": {"ram": 1, "raider": 3}}]},
+          {"name": "La raccolta dei predoni", "major": false, "groups": [{"entry": 3, "target": "harvest", "units": {"raider": 5, "mage": 2}}, {"entry": 1, "target": "militia", "units": {"knight": 3}}]},
+          {"name": "Il cuore del regno", "major": false, "groups": [{"entry": 0, "target": "keep", "units": {"ram": 1, "raider": 6, "archer": 4}}, {"entry": 2, "target": "keep", "units": {"knight": 3}}]},
+          {"name": "I borghi assediati", "major": false, "groups": [{"entry": 3, "target": "harvest", "units": {"ram": 1, "raider": 5}}, {"entry": 1, "target": "militia", "units": {"ram": 1, "raider": 5}}]},
+          {"name": "La notte più lunga", "major": true, "groups": [{"entry": 0, "target": "harvest", "units": {"mage": 2, "raider": 5}}, {"entry": 2, "target": "militia", "units": {"mage": 2, "raider": 5}}, {"entry": 1, "target": "keep", "units": {"knight": 4}}]},
+          {"name": "L’ultimo avvertimento", "major": false, "groups": [{"entry": 3, "target": "keep", "units": {"ram": 1, "raider": 6, "archer": 3}}, {"entry": 1, "target": "militia", "units": {"ram": 1, "raider": 4}}]},
+          {"name": "Prima dell’alba", "major": true, "groups": [{"entry": 0, "target": "keep", "units": {"champion": 1, "raider": 5, "mage": 2}}, {"entry": 3, "target": "harvest", "units": {"ram": 1, "raider": 4}}, {"entry": 2, "target": "militia", "units": {"ram": 1, "raider": 4, "archer": 3}}]}
+        ]
+      },
+      description: "Sopravvivi a 10 ondate proteggendo il castello e almeno uno dei due villaggi. Il Borgo delle spighe offre risorse; il Borgo della milizia invia armigeri. Perderne uno toglie il suo aiuto; perderli entrambi significa sconfitta. Preparazione: 90s. Popolazione: 42.",
+      missionGuide: "Conquista Mercato e Mulino per rendite rinnovabili. Ogni ondata superata offre legno e oro. Maghi disponibili subito. Contadini: Ripara (T), poi un edificio danneggiato; 1 legno ripristina fino a 5 PV. Gli ingressi nemici non sono edifici da distruggere. I villaggi sono depositi e permettono basi avanzate.",
+      villages: [
+        {"id": "harvest", "name": "Borgo delle spighe", "x": 850, "y": 700, "hp": 1000, "benefit": "30 legno e 20 oro dopo ogni ondata."},
+        {"id": "militia", "name": "Borgo della milizia", "x": 2400, "y": 1450, "hp": 1000, "benefit": "Un armigero ogni due ondate; attende se la popolazione è piena."}
+      ]
     }
   ];
 })();

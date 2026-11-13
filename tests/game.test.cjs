@@ -28,7 +28,7 @@ function game(level = 1) {
   const anchor = '  // Expose a tiny read-only diagnostic surface for automated smoke tests.';
   assert.ok(source.includes(anchor), 'test injection anchor exists');
   vm.runInContext(source.replace(anchor,
-    '  globalThis.testGame = {state, createUnit, createBuilding, resetWorld, keep, select, recruit, cancelTraining, reservedPopulation, orderUnits, update, updateWorker, updateFighter, updateOutpost, updateTraining, performAttack, damage, startWave, depositCargo, dispatchCommand, startGame, restart, finish, validBuild, citadelShield, updateTowerDefenses, planWave, frontHome, waveFront, waveFronts, forgeMultiplier, updateRam, saveGroup, recallGroup, selectSameType, nearestDepot, updateDefenses, beginBuild, placeBuilding, cancelBuild, updateTowerDefenses, updateMissions, convoyAction, activeCart, controlRate, heldSanctuaries, selectArmy, playerUnits, updateHud};\n' + anchor), sandbox);
+    '  globalThis.testGame = {state, createUnit, createBuilding, resetWorld, keep, select, recruit, cancelTraining, reservedPopulation, orderUnits, update, updateWorker, updateFighter, updateOutpost, updateTraining, performAttack, damage, startWave, depositCargo, dispatchCommand, startGame, restart, finish, validBuild, citadelShield, updateTowerDefenses, planWave, frontHome, waveFront, waveFronts, forgeMultiplier, updateRam, saveGroup, recallGroup, selectSameType, nearestDepot, updateDefenses, beginBuild, placeBuilding, cancelBuild, updateTowerDefenses, updateMissions, convoyAction, activeCart, controlRate, heldSanctuaries, selectArmy, playerUnits, updateHud, startSurvivalWave, updateSurvivalClock, updateSurvival, waveEnemies, livingVillages, focusVillage, focusSurvivalEnemy};\n' + anchor), sandbox);
   const g = sandbox.testGame; g.resetWorld(level); g.state.running = true; g.elements = elements;
   g.step = (seconds, fn = g.update) => { for (let i = 0; i < Math.ceil(seconds * 60); i++) fn(1 / 60); };
   return g;
@@ -917,7 +917,7 @@ test('all three sanctuaries accelerate the ritual to 1.5 and victory requires 18
   const g = game(7), s = g.state; s.outposts.forEach(p => { p.owner = 'player'; p.control = 1; });
   assert.equal(g.controlRate(), 1.5); g.step(60, g.updateMissions); assert.ok(Math.abs(s.controlTime - 90) < 1e-6);
   assert.equal(s.ended, false); g.step(60, g.updateMissions);
-  assert.equal(s.controlTime, 180); assert.equal(s.ended, true); assert.equal(s.nextLevel, false);
+  assert.equal(s.controlTime, 180); assert.equal(s.ended, true); assert.equal(s.nextLevel, true);
   assert.match(g.elements.get('modalSubtitle').textContent, /sigilli sono ricomposti/);
 });
 
@@ -985,6 +985,197 @@ test('a prepared distributed army can hold the sanctuaries through late waves an
     }
   });
   assert.equal(g.playerUnits().length, 40);
-  g.step(180); assert.equal(s.controlTime, 180); assert.equal(s.ended, true); assert.equal(s.nextLevel, false);
+  g.step(180); assert.equal(s.controlTime, 180); assert.equal(s.ended, true); assert.equal(s.nextLevel, true);
   assert.ok(g.keep('player').hp > 0);
+});
+
+test('finite-wave missions start safely without destroyable enemy spawners', () => {
+  for (const id of [8, 9]) {
+    const g = game(id), s = g.state;
+    assert.equal(s.survival.phase, 'preparation'); assert.equal(s.waveIn, 90);
+    assert.equal(g.waveEnemies().length, 0);
+    assert.equal(s.buildings.filter(b => b.team !== 'player').length, 0);
+    assert.equal(s.popCap, id === 8 ? 40 : 42);
+    assert.equal(g.livingVillages().length, id === 9 ? 2 : 0);
+    g.step(89); assert.equal(s.survival.phase, 'preparation');
+    g.step(2); assert.equal(s.survival.phase, 'active'); assert.equal(g.waveEnemies().length, 4);
+    assert.equal(s.ended, false);
+  }
+});
+
+test('waves cannot overlap, rewards happen once, and major waves grant longer rests', () => {
+  const g = game(8), s = g.state;
+  for (let n = 1; n <= 4; n++) {
+    g.startSurvivalWave(); const count = g.waveEnemies().length;
+    g.startSurvivalWave(); assert.equal(g.waveEnemies().length, count);
+    g.step(100, dt => { g.updateSurvivalClock(dt); g.updateMissions(dt); });
+    assert.equal(s.survival.phase, 'active'); assert.equal(s.wave, n);
+    const wood = s.wood, gold = s.gold;
+    for (const u of g.waveEnemies()) g.damage(u, 10000, 'player');
+    g.updateMissions(0);
+    assert.equal(s.survival.cleared, n); assert.equal(s.survival.phase, 'rest');
+    assert.equal(s.waveIn, n === 4 ? 60 : 35);
+    assert.equal(s.wood, wood + (n === 4 ? 100 : 60));
+    assert.equal(s.gold, gold + (n === 4 ? 70 : 45));
+    g.updateMissions(10); assert.equal(s.wood, wood + (n === 4 ? 100 : 60));
+  }
+});
+
+test('victory requires every wave and its last survivor; level 8 advances to 9', () => {
+  for (const id of [8, 9]) {
+    const g = game(id), s = g.state, total = id === 8 ? 12 : 10;
+    if (id === 9) g.damage(g.livingVillages()[0], 10000, 'enemy');
+    for (let i = 0; i < total; i++) {
+      g.startSurvivalWave();
+      const enemies = g.waveEnemies(), last = enemies.pop();
+      for (const u of enemies) g.damage(u, 10000, 'player');
+      g.updateMissions(0); assert.equal(s.ended, false); assert.equal(s.survival.cleared, i);
+      g.damage(last, 10000, 'player'); g.updateMissions(0);
+      assert.equal(s.ended, i === total - 1);
+    }
+    assert.equal(s.nextLevel, id === 8); assert.equal(s.survival.cleared, total);
+    assert.match(g.elements.get('modalSubtitle').textContent, new RegExp(`${total} ondate`));
+    if (id === 8) { g.startGame(); assert.equal(g.livingVillages().length, 2); assert.equal(s.survival.cleared, 0); }
+  }
+});
+
+test('castle loss ends either survival mission and losing both villages ends level 9', () => {
+  const g = game(9), s = g.state;
+  const [a, b] = g.livingVillages(); g.damage(a, 10000, 'enemy'); assert.equal(s.ended, false);
+  g.damage(b, 10000, 'enemy'); assert.equal(s.ended, true); assert.equal(s.nextLevel, false);
+  assert.equal(g.elements.get('modalTitle').textContent, 'I villaggi sono perduti');
+  for (const id of [8, 9]) { g.resetWorld(id); s.running = true; g.damage(g.keep('player'), 10000, 'enemy'); assert.equal(s.ended, true); assert.equal(s.nextLevel, false); }
+});
+
+test('pause freezes wave timing, combat, village rewards and repairs', () => {
+  const g = game(9), s = g.state, home = g.keep('player'), worker = s.units[0];
+  home.hp = 500; worker.x = home.x - 60; worker.y = home.y;
+  g.select(worker); g.orderUnits(home.x, home.y); s.running = false;
+  const before = JSON.stringify({ wood: s.wood, gold: s.gold, hp: home.hp, waveIn: s.waveIn });
+  g.startSurvivalWave(); g.step(120); g.updateMissions(120);
+  assert.equal(JSON.stringify({ wood: s.wood, gold: s.gold, hp: home.hp, waveIn: s.waveIn }), before);
+  s.running = true; g.startSurvivalWave(); assert.equal(s.survival.phase, 'active');
+});
+
+test('repairs consume wood only at the building and stop at full health or destruction', () => {
+  const g = game(8), s = g.state, home = g.keep('player'), worker = s.units[0];
+  home.hp = 980; worker.x = home.x - 500; worker.y = home.y;
+  g.select(worker); g.dispatchCommand('repair'); assert.equal(s.mode, 'repair');
+  g.orderUnits(home.x, home.y, 'repair'); assert.equal(worker.order.type, 'repair');
+  const wood = s.wood; g.step(1, dt => g.updateWorker(worker, dt));
+  assert.equal(s.wood, wood); assert.equal(home.hp, 980);
+  worker.x = home.x - 65; g.step(3, dt => g.updateWorker(worker, dt));
+  assert.equal(home.hp, 1000); assert.equal(s.wood, wood - 4); assert.equal(worker.order, null);
+  home.hp = 999; g.orderUnits(home.x, home.y); g.step(1, dt => g.updateWorker(worker, dt));
+  assert.equal(home.hp, 1000); assert.equal(s.wood, wood - 5);
+  const b = g.createBuilding('depot', 'player', worker.x + 40, worker.y); b.hp = 100;
+  g.orderUnits(b.x, b.y); g.damage(b, 10000); g.step(1, dt => g.updateWorker(worker, dt));
+  assert.equal(b.hp, 0); assert.equal(s.wood, wood - 5); assert.equal(worker.order, null);
+});
+
+test('repairs wait for wood and cannot repair units, enemies, or unfinished buildings', () => {
+  const g = game(9), s = g.state, worker = s.units[0], village = g.livingVillages()[0];
+  worker.x = village.x - 60; worker.y = village.y; village.hp = 900; s.wood = 0;
+  g.select(worker); g.orderUnits(village.x, village.y); g.step(2, dt => g.updateWorker(worker, dt));
+  assert.equal(village.hp, 900); assert.equal(s.wood, 0);
+  s.wood = 1; g.step(1, dt => g.updateWorker(worker, dt)); assert.equal(village.hp, 905); assert.equal(s.wood, 0);
+  for (const target of [g.createUnit('soldier', 'player', 1000, 1000), g.createBuilding('barracks', 'enemy', 1200, 1000), g.createBuilding('depot', 'player', 1400, 1000, .5)]) {
+    worker.order = null; target.hp -= 10; g.orderUnits(target.x, target.y, 'repair'); assert.equal(worker.order, null);
+  }
+  g.resetWorld(7); s.running = true; g.select(s.units.find(u => u.team === 'player' && u.type === 'worker')); g.dispatchCommand('repair'); assert.equal(s.mode, 'select');
+});
+
+test('mill and market yield renewable resources only while safely held', () => {
+  const g = game(8), s = g.state, [market, mill] = s.outposts;
+  for (const p of s.outposts) { p.owner = 'player'; p.control = 1; }
+  const wood = s.wood, gold = s.gold; g.step(8.1, g.updateOutpost);
+  assert.equal(s.wood, wood + 12); assert.equal(s.gold, gold + 10);
+  g.createUnit('soldier', 'player', mill.x, mill.y); g.createUnit('raider', 'enemy', mill.x + 30, mill.y);
+  g.step(9, g.updateOutpost); assert.equal(mill.contested, true); assert.equal(s.wood, wood + 12);
+  market.owner = 'enemy'; market.control = -1; const heldGold = s.gold;
+  g.step(9, g.updateOutpost); assert.equal(s.gold, heldGold);
+});
+
+test('villages grant distinct bonuses and militia respects population reservations', () => {
+  const g = game(9), s = g.state, [harvest, militia] = g.livingVillages();
+  const clear = () => { g.startSurvivalWave(); for (const u of g.waveEnemies()) g.damage(u, 10000, 'player'); g.updateMissions(0); };
+  const wood = s.wood, gold = s.gold; clear();
+  assert.equal(s.wood, wood + 90); assert.equal(s.gold, gold + 65);
+  while (g.playerUnits().length < s.popCap - 1) g.createUnit('soldier', 'player', 1600, 1100);
+  const home = g.keep('player'); g.select(home); g.recruit('worker'); assert.equal(g.reservedPopulation(), 1);
+  clear(); assert.equal(militia.pendingRecruits, 1); assert.equal(g.playerUnits().length, s.popCap - 1);
+  g.updateMissions(0); assert.equal(militia.pendingRecruits, 1);
+  g.cancelTraining(); g.updateMissions(0); assert.equal(militia.pendingRecruits, 0); assert.equal(g.playerUnits().length, s.popCap);
+  g.damage(harvest, 10000, 'enemy'); const afterWood = s.wood; clear(); assert.equal(s.wood, afterWood + 60);
+  clear(); assert.equal(militia.pendingRecruits, 1);
+  g.damage(militia, 10000, 'enemy'); assert.equal(militia.pendingRecruits, 0); assert.equal(s.ended, true);
+});
+
+test('survival enemies honor village targets and redirect to the castle if one is destroyed', () => {
+  const g = game(9), s = g.state, village = g.livingVillages()[0], home = g.keep('player');
+  // No defenders distract the attackers in this targeting check.
+  s.units = [];
+  for (const type of ['raider', 'knight', 'ram']) {
+    const u = g.createUnit(type, 'enemy', village.x + 60, village.y, { type: 'survival', targetId: village.id });
+    const hp = village.hp; g.updateFighter(u, 1); assert.ok(village.hp < hp, type + ' hits village');
+    u.cooldown = 0;
+  }
+  g.damage(village, 10000, 'enemy'); g.updateHud();
+  assert.match(g.elements.get('waveNotice').textContent, /Nord → castello/);
+  for (const u of g.waveEnemies()) {
+    u.x = home.x + 50; u.y = home.y;
+    const hp = home.hp; g.updateFighter(u, 1); assert.ok(home.hp < hp, u.type + ' redirects to castle');
+  }
+});
+
+test('village bases allow construction and deposits but cannot train units', () => {
+  const g = game(9), s = g.state, village = g.livingVillages()[0];
+  s.nodes = [];
+  assert.equal(g.validBuild(village.x + 180, village.y, 'barracks'), true);
+  const worker = s.units[0]; worker.x = village.x + 50; worker.y = village.y; worker.carry = 18; worker.carryType = 'wood';
+  assert.equal(g.nearestDepot(worker).id, village.id);
+  const wood = s.wood; g.depositCargo(worker, 1); assert.equal(s.wood, wood + 18);
+  g.select(village); g.recruit('worker'); assert.equal(village.queue.length, 0);
+  g.damage(village, 10000); assert.equal(g.validBuild(village.x + 180, village.y, 'barracks'), false);
+});
+
+test('mages are available from the start of both survival missions', () => {
+  for (const id of [8, 9]) {
+    const g = game(id), b = g.createBuilding('barracks', 'player', 1800, 1100);
+    g.select(b); g.recruit('mage'); assert.equal(b.queue[0]?.type, 'mage');
+  }
+});
+
+test('prepared armies within the population caps can repel both final assaults in real combat', () => {
+  for (const id of [8, 9]) {
+    const g = game(id), s = g.state;
+    s.units = [];
+    const centers = id === 8 ? [g.keep('player')] : [g.keep('player'), ...g.livingVillages()];
+    for (const c of centers) for (let i = 0, count = id === 8 ? 32 : 12; i < count; i++) {
+      const type = i % 6 < 3 ? 'soldier' : i % 6 < 5 ? 'archer' : 'mage';
+      const angle = i * Math.PI * 2 / count, radius = type === 'soldier' ? 110 : 70;
+      g.createUnit(type, 'player', c.x + Math.cos(angle) * radius, c.y + Math.sin(angle) * radius);
+    }
+    assert.ok(g.playerUnits().length + 3 <= s.popCap, 'room for at least three workers');
+    s.survival.cleared = id === 8 ? 11 : 9;
+    g.startSurvivalWave();
+    assert.ok(g.waveEnemies().some(u => u.type === 'champion'));
+    assert.ok(g.waveEnemies().some(u => u.type === 'ram'));
+    for (let i = 0; i < 180 && !s.ended; i++) g.step(1);
+    assert.equal(s.ended, true); assert.ok(g.keep('player').hp > 0);
+    assert.equal(s.survival.cleared, id === 8 ? 12 : 10);
+    assert.equal(g.waveEnemies().length, 0);
+    if (id === 9) assert.equal(g.livingVillages().length, 2);
+  }
+});
+
+test('each village has its own attack alert, and restarting clears survival progress', () => {
+  const g = game(9), s = g.state;
+  for (const b of g.livingVillages()) {
+    g.damage(b, 20, 'enemy'); assert.match(g.elements.get('toast').textContent, new RegExp(b.frontName));
+  }
+  g.startSurvivalWave(); for (const u of g.waveEnemies()) g.damage(u, 10000, 'player'); g.updateMissions(0);
+  assert.equal(s.survival.cleared, 1);
+  g.restart(8); assert.equal(s.survival.cleared, 0); assert.equal(s.waveIn, 90); assert.equal(g.livingVillages().length, 0);
+  g.restart(1); assert.equal(s.survival, null); assert.equal(s.popCap, 18);
 });

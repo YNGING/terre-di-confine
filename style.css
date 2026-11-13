@@ -71,3 +71,19 @@
   .game-shell[data-mission="control"] .quick-actions{bottom:225px}
   .mission-panel{font-size:10px}.convoy-controls button{font-size:10px}
 }
+
+/* Finite-wave missions: readable forecast, compact controls, night palette. */
+.game-shell[data-mission="survival"] .minimap-header,.game-shell[data-mission="villages"] .minimap-header{flex-wrap:wrap;gap:5px}
+.game-shell[data-mission="villages"] .minimap-container{background:#182331f5}
+@media(max-width:680px){
+  .game-shell[data-mission="survival"] .quick-actions,.game-shell[data-mission="villages"] .quick-actions{top:225px;bottom:auto;flex-direction:row;flex-wrap:wrap;width:calc(100% - 20px);justify-content:flex-end}
+  .game-shell[data-mission="survival"] .quick-actions button,.game-shell[data-mission="villages"] .quick-actions button{padding:6px;font-size:10px;min-height:32px}
+  .game-shell[data-mission="survival"] .wave-notice,.game-shell[data-mission="villages"] .wave-notice{max-height:72px;overflow:auto}
+}
+
+@media(max-width:680px){
+  .game-shell[data-mission="survival"] .toast,.game-shell[data-mission="villages"] .toast{top:267px}
+}
+@media(max-height:600px) and (min-width:681px){
+  .game-shell[data-mission="survival"] .minimap-container,.game-shell[data-mission="villages"] .minimap-container{max-height:calc(100dvh - 160px);overflow-y:auto}
+}

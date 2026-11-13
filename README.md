@@ -2,9 +2,9 @@
 
 Un RTS in italiano, **senza librerie esterne e senza backend**. HTML5, CSS e JavaScript con Canvas 2D: apri `index.html` oppure pubblica i file su GitHub Pages.
 
-## Sette livelli
+## Nove livelli
 
-Il selettore iniziale permette di giocare tutti e sette i livelli. Vincendo uno dei primi sei appare **Livello successivo**; dopo una sconfitta si riprova il livello corrente. **Ricomincia** azzera il livello corrente e riapre il selettore. Da pausa o fine partita, **Scegli livello · abbandona la partita** torna al selettore azzerando la partita in corso. Non sono richiesti sblocco o salvataggi.
+Il selettore iniziale permette di giocare tutti e nove i livelli. Vincendo uno dei primi otto appare **Livello successivo**; dopo una sconfitta si riprova il livello corrente. **Ricomincia** azzera il livello corrente e riapre il selettore. Da pausa o fine partita, **Scegli livello · abbandona la partita** torna al selettore azzerando la partita in corso. Non sono richiesti sblocco o salvataggi.
 
 | | Livello 1 · Terre di Confine | Livello 2 · La frontiera contesa | Livello 3 · L’assedio delle tre torri | Livello 4 · La marca di ferro | Livello 5 · La corona usurpata |
 | --- | --- | --- | --- | --- | --- |
@@ -108,6 +108,29 @@ Il livello 7 conclude la campagna con il **controllo territoriale**: accumula **
 - Gli accampamenti sono distruttibili per ridurre la pressione, ma **la vittoria dipende dal rituale**, non dalla loro eliminazione. La barra e l’obiettivo mostrano progresso, santuari validi e velocità corrente.
 - Perdere il castello comporta la sconfitta. La pausa ferma il rituale e le ondate. Ricominciare azzera il progresso; dopo la vittoria puoi rigiocare il settimo livello o tornare al selettore.
 
+### L’ultima resistenza
+
+Il livello 8 cambia obiettivo: **sopravvivi a 12 ondate e salva il castello**. La mappa è di 3200 × 2200, con popolazione massima 40, 350 legno e 250 oro iniziali. I maghi sono disponibili subito in caserma.
+
+- Hai **90 secondi di preparazione**. La prossima ondata parte solo dopo aver eliminato tutti i nemici della precedente e una tregua di **35 secondi**, oppure **60 secondi dopo un grande assalto**. **Anticipa l’ondata** permette di rinunciare alla tregua; durante un assalto è disabilitato.
+- Le ondate hanno composizioni fisse e crescenti: predoni, arcieri, cavalieri contro i raccoglitori, maghi e arieti. Le ondate **4, 8 e 12** sono grandi assalti; nell’ultima arriva anche un campione. I nemici entrano dai bordi, senza fortezze o accampamenti da distruggere.
+- La minimappa mostra direzione, bersaglio e composizione della prossima ondata, con ingressi evidenziati. **Trova nemico** centra un nemico ancora vivo, utile per chiudere l’ondata.
+- Ogni ondata superata assegna **60 legno e 45 oro**; un grande assalto assegna **100 legno e 70 oro**. Il Mercato neutrale offre **10 oro ogni 8s**, il Mulino **12 legno ogni 8s**, finché alleati e non contesi. Entrambi sono depositi e permettono basi avanzate.
+- Nei livelli 8–9 i contadini possono **riparare edifici alleati completati**: pulsante **Ripara** o **T**, poi il bersaglio; funziona anche l’ordine contestuale su un edificio danneggiato. Ogni contadino ripristina fino a **5 PV ogni mezzo secondo al costo di 1 legno**. Deve raggiungere l’edificio; senza legno attende e riprende appena disponibile. A salute piena si ferma. Gli edifici distrutti e le unità non sono riparabili.
+
+### La notte dei fuochi
+
+Il livello 9 porta la difesa su più fronti in una mappa notturna di 3200 × 2200. Devi superare **10 ondate**, mantenendo vivi **il castello e almeno uno dei due villaggi**. Popolazione massima **42**, risorse iniziali 350 legno e 250 oro; preparazione, tregue, ricompense, riparazioni, maghi e avamposti economici seguono le regole del livello 8. I grandi assalti sono alle ondate **4, 8 e 10**.
+
+| Villaggio | Aiuto finché sopravvive |
+| --- | --- |
+| Borgo delle spighe | **30 legno e 20 oro aggiuntivi** dopo ogni ondata |
+| Borgo della milizia | **Un armigero ogni due ondate**, alla posizione del villaggio |
+
+I villaggi hanno **1000 PV**, ricevono le risorse dei contadini e permettono di costruire caserme e magazzini nelle vicinanze. Non sparano e non reclutano a pagamento. I rinforzi della milizia mantengono la posizione: se la popolazione, incluse le code, è piena, attendono un posto libero; vengono persi se il borgo è distrutto. **Centra villaggio** scorre fra i borghi ancora vivi; il pannello missione mostra salute, perdite e rinforzi in attesa.
+
+Gli assalti alternano castello e villaggi e possono colpire più bersagli insieme. Perdere un villaggio elimina il suo aiuto ma permette ancora di vincere. Perderli entrambi, oppure perdere il castello, causa la sconfitta. Un villaggio distrutto non può essere ricostruito; i nemici diretti lì ripiegano sul castello. L’ultima ondata comprende il campione e due gruppi con arieti.
+
 ## Come si gioca (livello 1)
 
 1. Premi **Inizia il livello**. Hai tre contadini e due armigeri.
@@ -163,12 +186,14 @@ Il **mago** ha 58 PV e lancia automaticamente un’esplosione ogni 3 secondi: 30
 | Tornare alla base | Spazio |
 | Centrare l’avamposto | Pulsante di stato dell’avamposto |
 | Costruire la caserma | B, con un contadino selezionato |
-| Costruire un magazzino (livelli 5–7) | M, con un contadino selezionato |
+| Costruire un magazzino (livelli 5–9) | M, con un contadino selezionato |
 | Reclutare contadino / armigero | R, con castello / caserma selezionati |
 | Reclutare arciere / mago | Q / E, con caserma selezionata |
 | Punto di raduno | Clic destro con l’edificio selezionato, o pulsante dedicato e clic; dal castello, su una risorsa per la raccolta automatica |
 | Annullare l’ultima unità in coda | Pulsante nell’edificio; rimborso completo |
 | Avviare, fermare, riprendere o centrare il carro (livello 6) | Pulsanti sopra la minimappa |
+| Riparare un edificio danneggiato (livelli 8–9) | Contadino selezionato: **Ripara** o T, poi clic sull’edificio |
+| Anticipare un’ondata / trovare nemici / centrare villaggi (livelli 8–9) | Pulsanti sopra la minimappa |
 | Pausa / ripresa | P oppure pulsante pausa e **Torna alla partita** |
 | Aiuto con pausa | H o pulsante ? |
 | Annullare un ordine in attesa della destinazione | Esc o **Annulla ordine** |
@@ -199,11 +224,11 @@ Per eseguire i test di regressione, con Node.js 22 o superiore e senza installar
 node --test tests/game.test.cjs
 ```
 
-I test verificano raccolta ed esaurimento, arrivi diagonali e raccolta prolungata, prenotazione della popolazione, code e rimborsi, ritirata, mantenimento posizione, attacchi a distanza, danni ad area, conquista e perdita dell’avamposto, ondate, assalto e riavvio. I test dei livelli successivi coprono inoltre conquista fra tre fazioni, depositi multipli, limite 24 con prenotazioni, attacchi fra rivali, ondate alternate, eliminazione dei fronti e passaggio fra livelli. Per l’assedio verificano anche bonus distinti delle torri, scudo dinamico, tiro della Guardia, contrattacchi annunciati, limite 28 e vittoria con un esercito preparato. Per la marca di ferro verificano scudo da quattro torri, Forgia, tenaglie, arieti corazzati, limite 30 e passaggio dal terzo livello; per la corona usurpata mappa e risorse, magazzini e basi avanzate, cavalieri, bastioni, Guardia reale e assalto con 36 unità; per gli aiuti al comando cura, avvisi, messaggi, raduno su risorse, gruppi e depositi. Per i livelli 6–7 coprono inoltre percorso e soste del convoglio, sostituzioni, popolazione, cavalieri contro la scorta, consegne, santuari contesi, progresso persistente, accelerazione del rituale e passaggio fra missioni. Usano una simulazione accelerata in una VM; le interazioni e il disegno richiedono anche una prova nel browser.
+I test verificano raccolta ed esaurimento, arrivi diagonali e raccolta prolungata, prenotazione della popolazione, code e rimborsi, ritirata, mantenimento posizione, attacchi a distanza, danni ad area, conquista e perdita dell’avamposto, ondate, assalto e riavvio. I test dei livelli successivi coprono inoltre conquista fra tre fazioni, depositi multipli, limite 24 con prenotazioni, attacchi fra rivali, ondate alternate, eliminazione dei fronti e passaggio fra livelli. Per l’assedio verificano anche bonus distinti delle torri, scudo dinamico, tiro della Guardia, contrattacchi annunciati, limite 28 e vittoria con un esercito preparato. Per la marca di ferro verificano scudo da quattro torri, Forgia, tenaglie, arieti corazzati, limite 30 e passaggio dal terzo livello; per la corona usurpata mappa e risorse, magazzini e basi avanzate, cavalieri, bastioni, Guardia reale e assalto con 36 unità; per gli aiuti al comando cura, avvisi, messaggi, raduno su risorse, gruppi e depositi. Per i livelli 6–7 coprono inoltre percorso e soste del convoglio, sostituzioni, popolazione, cavalieri contro la scorta, consegne, santuari contesi, progresso persistente, accelerazione del rituale e passaggio fra missioni. Per i livelli 8–9 verificano inoltre ondate finite, ricompense singole, pause, riparazioni e costi, rendite rinnovabili, bersagli dei nemici, bonus e perdita dei villaggi, rinforzi con popolazione piena, passaggi 7→8→9 e assalti finali contro eserciti preparati. Usano una simulazione accelerata in una VM; le interazioni e il disegno richiedono anche una prova nel browser.
 
 `rules.js` raccoglie costi, statistiche e le configurazioni `RTS_LEVELS` (mappe, popolazione, risorse iniziali, avamposti, fortezze e calendario delle ondate) per facilitare il bilanciamento. Il comportamento di ogni livello dipende dai suoi campi (`kind`, `waveIntro`/`waveOrder` con tenaglie, `minWaveInterval`, `shieldPerTower`, `counterattacks`, `ramFrom`, `buildings`, `forwardBuild`, `bastions`, `lastStand`, `convoy`, `control`…), quindi un nuovo livello si aggiunge soprattutto come configurazione. `game.js` gestisce simulazione, comandi e Canvas. La diagnostica `window.__rtsDebug.snapshot()` restituisce solo un riepilogo dello stato.
 
-Il progetto resta single-player con sette mappe fisse, movimento diretto e IA a ondate. Ricerca dei percorsi intorno agli ostacoli, nebbia di guerra, salvataggi e multiplayer sono sviluppi futuri. Il bilanciamento può essere ulteriormente affinato con partite reali.
+Il progetto resta single-player con nove mappe fisse, movimento diretto e IA a ondate. Ricerca dei percorsi intorno agli ostacoli, nebbia di guerra, salvataggi e multiplayer sono sviluppi futuri. Il bilanciamento può essere ulteriormente affinato con partite reali.
 
 ```text
 terre-di-confine/
