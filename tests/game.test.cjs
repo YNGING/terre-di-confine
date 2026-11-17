@@ -1337,3 +1337,23 @@ test('a prepared army of 48 with the trebuchet deployed can win act three', () =
   assert.equal(s.lastStandDone, true);
   assert.equal(g.keep('enemy').hp, 0); assert.equal(s.ended, true);
 });
+
+test('level ten has one fixed road network: it carries the trebuchet route and no resource sits on it', () => {
+  const ctx = {}; ctx.window = ctx;
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'rules.js'), 'utf8'), ctx);
+  const level = ctx.RTS_LEVELS.find(l => l.id === 10);
+  assert.ok(level.roads?.length);
+  assert.ok(level.phases.every(p => !('roads' in p)), 'acts never redefine the roads');
+  const segments = level.roads.flatMap(line => line.slice(1).map((b, i) => [line[i], b]));
+  const distance = ([x, y], [[ax, ay], [bx, by]]) => {
+    const dx = bx - ax, dy = by - ay, t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)));
+    return Math.hypot(x - ax - t * dx, y - ay - t * dy);
+  };
+  const route = level.phases.find(p => p.convoy).convoy.route;
+  for (const stop of route) assert.ok(segments.some(s => distance([stop.x, stop.y], s) < 1), `${stop.name} is on a road`);
+  // Road half-width is about 46; a node must clear it with its own radius.
+  const g = game(10);
+  for (const n of g.state.nodes) {
+    assert.ok(segments.every(s => distance([n.x, n.y], s) > n.r + 46), `node ${n.x},${n.y} sits on a road`);
+  }
+});

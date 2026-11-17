@@ -1189,20 +1189,22 @@
         ctx.beginPath();ctx.moveTo(gx,gy+4);ctx.lineTo(gx-2,gy-3);ctx.moveTo(gx,gy+4);ctx.lineTo(gx+3,gy-4);ctx.stroke();
       }
     }
-    // Scenario roads show the two fronts without introducing blocking terrain.
+    // Scenario roads show the fronts without introducing blocking terrain. They are read from
+    // the base level, so a multi-act level keeps the same map while its acts redirect the waves.
     ctx.beginPath();
-    if (level.kind === 'outpost') { ctx.moveTo(467,794);ctx.bezierCurveTo(900,699,1260,955,2045,789); }
+    if (baseLevel.roads) for (const line of baseLevel.roads) line.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));
+    else if (baseLevel.kind === 'outpost') { ctx.moveTo(467,794);ctx.bezierCurveTo(900,699,1260,955,2045,789); }
     else {
       // Roads leave the castle, meet at the first post, then fork towards each front's post.
-      const [px, py] = level.player, hub = level.posts[0];
+      const [px, py] = baseLevel.player, hub = baseLevel.posts[0];
       ctx.moveTo(px,py);ctx.lineTo(hub.x,hub.y);
-      for (const front of level.enemies) {
+      for (const front of baseLevel.enemies) {
         const p = state.outposts[front.post];
         ctx.moveTo(hub.x,hub.y);ctx.bezierCurveTo(hub.x+280,hub.y,p.x-220,p.y,p.x,p.y);ctx.lineTo(front.x,front.y);
       }
     }
-    if (level.convoy) {
-      level.convoy.route.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));
+    if (baseLevel.convoy) {
+      baseLevel.convoy.route.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));
     }
     ctx.strokeStyle='#a5946e';ctx.lineWidth=93;ctx.lineCap='round';ctx.stroke();
     ctx.strokeStyle='#b5a37c';ctx.lineWidth=77;ctx.stroke();
@@ -1577,11 +1579,12 @@
     mctx.fillStyle='#375742';mctx.fillRect(0,0,mw,mh);
     mctx.strokeStyle='#a28a6280';mctx.lineWidth=11;
     mctx.beginPath();
-    if (level.kind === 'outpost') { mctx.moveTo(45,79);mctx.bezierCurveTo(90,69,130,95,204,79); }
+    if (baseLevel.roads) for (const line of baseLevel.roads) line.forEach(([x,y],i)=>i?mctx.lineTo(x*sx,y*sy):mctx.moveTo(x*sx,y*sy));
+    else if (baseLevel.kind === 'outpost') { mctx.moveTo(45,79);mctx.bezierCurveTo(90,69,130,95,204,79); }
     else {
-      const [px, py] = level.player, hub = level.posts[0];
+      const [px, py] = baseLevel.player, hub = baseLevel.posts[0];
       mctx.moveTo(px*sx,py*sy);mctx.lineTo(hub.x*sx,hub.y*sy);
-      for (const e of level.enemies) { const p=state.outposts[e.post];mctx.moveTo(hub.x*sx,hub.y*sy);mctx.lineTo(p.x*sx,p.y*sy);mctx.lineTo(e.x*sx,e.y*sy); }
+      for (const e of baseLevel.enemies) { const p=state.outposts[e.post];mctx.moveTo(hub.x*sx,hub.y*sy);mctx.lineTo(p.x*sx,p.y*sy);mctx.lineTo(e.x*sx,e.y*sy); }
     }
     mctx.stroke();
     for(const n of state.nodes) {

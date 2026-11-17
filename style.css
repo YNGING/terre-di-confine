@@ -68,7 +68,7 @@
 .convoy-controls button:disabled{opacity:.55;cursor:not-allowed}
 @media(max-width:680px){
   .game-shell[data-mission="escort"] .quick-actions{bottom:340px}
-  .game-shell[data-mission="control"] .quick-actions{bottom:225px}
+  .game-shell[data-mission="control"] .quick-actions,.game-shell[data-mission="finale"] .quick-actions{bottom:225px}
   .mission-panel{font-size:10px}.convoy-controls button{font-size:10px}
 }
 

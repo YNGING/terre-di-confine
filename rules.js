@@ -312,6 +312,11 @@
       bastions: [[3800, 1300], [3800, 1700]],
       lastStand: { at: .5, message: 'esce il Signore della guerra! Finché vive, i suoi soldati colpiscono più forte.',
         guards: [['warlord', -170, 0], ['raider', -120, -80], ['raider', -120, 80], ['raider', -60, -125], ['raider', -60, 125], ['archer', -20, -60], ['archer', -20, 60]] },
+      // Fixed road network for every act: the main road is the trebuchet's route.
+      roads: [[[500,1500], [1750,1500], [2300,1500], [2800,1300], [3150,1500], [3550,1500], [4050,1500]],
+        [[900,1500], [1300,700]], [[900,1500], [1300,2300]],
+        [[2800,1300], [3350,750], [3000,500]], [[3350,750], [3750,420]],
+        [[3150,1500], [3350,2250], [3000,2500]]],
       description: 'Il gran finale in tre atti. Atto I: accendi i fari per chiamare gli alleati. Atto II: scorta il trabucco fino alla postazione d’assedio. Atto III: abbatti la cittadella della corona e il suo Signore della guerra. Popolazione: 42, poi 48.',
       player: [500, 1500],
       // Fronts keep their order in every act; each act only redirects them (enemyPosts).
@@ -336,12 +341,12 @@
           bonus: 'Freccia automatica: 12 danni ogni 2s, portata 220. Finché è nemica protegge la cittadella del 15%.' },
         { name: 'Forgia', role: 'forge', x: 3550, y: 1500, gold: 0, initialOwner: 'enemy', damageBonus: .2,
           bonus: '+20% di danni a tutte le unità di chi la controlla, finché non è contesa. Finché è nemica protegge la cittadella del 15%.' }],
-      wood: [[800,800], [800,2200], [1100,1100], [1100,1900], [550,600], [550,2400], [1700,500], [1700,2500],
+      wood: [[800,800], [800,2200], [1250,1050], [1250,1950], [550,600], [550,2400], [1700,500], [1700,2500],
         [2000,1000], [2000,2000], [2250,700], [2250,2300], [2600,1000], [2600,2000], [2900,850], [2950,1900],
-        [3350,1200], [3400,1850], [3700,900], [3700,2100], [4200,700], [4200,2300], [1500,1500], [2550,1650],
+        [3350,1200], [3400,1850], [3700,900], [3700,2100], [4200,700], [4200,2300], [1500,1760], [2550,1650],
         [950,450,1000], [1550,2650,1000]],
-      gold: [[900,1500], [1500,950], [1500,2050], [2050,1500], [2500,1250], [2700,2300], [2700,700], [3200,1100],
-        [3650,2500], [4250,1500], [1250,1500,900], [1950,1850,900], [2900,1650,900]],
+      gold: [[880,1760], [1500,950], [1500,2050], [2050,1250], [2500,1250], [2700,2300], [2700,700], [3200,1100],
+        [3650,2500], [4250,1500], [1250,1250,900], [1950,1850,900], [2900,1650,900]],
       // Each act overrides part of this configuration; the engine merges them in order.
       phases: [
         { kind: 'control', act: 'I', actTitle: 'Atto I · I fari del confine', citadelSealed: true,
