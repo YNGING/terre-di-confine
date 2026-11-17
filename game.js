@@ -5,7 +5,8 @@
   const canvas = $('game'), ctx = canvas.getContext('2d', { alpha: false });
   const mini = $('minimap'), mctx = mini.getContext('2d');
   const TWO_PI = Math.PI * 2;
-  let level = window.RTS_LEVELS[0], W = level.width, H = level.height;
+  // `level` is the active configuration; in a multi-act level it is baseLevel merged with the current act.
+  let level = window.RTS_LEVELS[0], baseLevel = level, W = level.width, H = level.height;
   const RULES = window.RTS_RULES, COST = RULES.costs, TYPE_NAMES = RULES.names;
   const state = {
     wood: 200, gold: 110, popCap: RULES.population, time: 0, wave: 1,
@@ -34,12 +35,18 @@
   const isMission = () => !!(level.convoy || level.control || level.survival);
   const activeCart = () => state.units.find(u => u.id === state.convoy?.cartId && alive(u));
   const heldSanctuaries = () => state.outposts.filter(p => p.role === 'sanctuary' && p.owner === 'player' && !p.contested).length;
-  const controlRate = () => !level.control || heldSanctuaries() < level.control.required ? 0 : heldSanctuaries() === state.outposts.length ? level.control.allRate : 1;
+  const controlRate = () => !level.control || heldSanctuaries() < level.control.required ? 0 : heldSanctuaries() === state.outposts.filter(p => p.role === 'sanctuary').length ? level.control.allRate : 1;
+  const isFinale = () => !!baseLevel.phases;
+  const actCount = () => baseLevel.phases?.length || 0;
+  const vehicleName = () => level.convoy?.vehicle?.name || 'carro';
+  const capitalized = text => text.charAt(0).toUpperCase() + text.slice(1);
+  const siegeEngine = () => state.units.find(u => u.id === state.siegeEngineId && alive(u));
   const reservedPopulation = () => state.buildings.filter(alive).reduce((sum, b) => sum + b.queue.length, 0);
   const canRecruit = (price) => canPay(price) && playerUnits().length + reservedPopulation() < state.popCap;
   const canTrainMage = () => level.magesUnlocked || state.outposts.some(p => p.owner === 'player' && (!p.role || ['arcane', 'checkpoint', 'sanctuary'].includes(p.role)));
   const usableDepot = p => p.owner === 'player' && !p.contested && (!p.role || ['market', 'checkpoint', 'sanctuary'].includes(p.role));
-  const citadelShield = () => level.shieldPerTower ? state.outposts.filter(p => isEnemy(p.owner)).length * level.shieldPerTower : 0;
+  // Posts marked noShield (beacons, fords) never protect the citadel.
+  const citadelShield = () => level.shieldPerTower ? state.outposts.filter(p => isEnemy(p.owner) && !p.noShield).length * level.shieldPerTower : 0;
   const isEnemy = team => team === 'enemy' || team === 'enemy2';
   const teamName = team => team === 'player' ? 'Alleato' : team === 'neutral' ? 'Neutrale' : level.factionName || level.enemies.find(e => e.team === team)?.name || 'Nemico';
   const teamColor = team => team === 'player' ? '#91d6b8' : team === 'enemy2' ? '#c49aed' : team === 'enemy' ? '#e98b7b' : '#dfcb8e';
@@ -56,6 +63,11 @@
   const countWord = n => ['nessuna', 'una', 'due', 'tre', 'quattro', 'cinque'][n] || String(n);
   const arrowFactor = victim => RULES.units[victim.type]?.arrowArmor ?? 1;
   // Each uncontested forge adds its bonus to every unit of the team holding it.
+  // A living unit with an aura (the warlord) strengthens its allies nearby, never itself.
+  const auraMultiplier = u => 1 + state.units.reduce((sum, v) => {
+    const aura = RULES.units[v.type]?.aura;
+    return aura && v !== u && v.team === u.team && alive(v) && dist(u, v) <= aura.radius ? sum + aura.bonus : sum;
+  }, 0);
   const forgeMultiplier = team => 1 + state.outposts
     .filter(p => p.role === 'forge' && p.owner === team && !p.contested)
     .reduce((sum, p) => sum + (p.damageBonus || 0), 0);
@@ -155,7 +167,8 @@
 
   function spawnCart() {
     const start = level.convoy.route[0];
-    const cart = createUnit('cart', 'player', start.x, start.y);
+    const cart = createUnit('cart', 'player', start.x, start.y), vehicle = level.convoy.vehicle;
+    if (vehicle) { cart.vehicle = vehicle.kind; cart.hp = cart.maxHp = vehicle.hp; cart.speed = vehicle.speed; }
     cart.routeIndex = 0; cart.waiting = true; cart.moving = false;
     state.convoy.cartId = cart.id;
     return cart;
@@ -169,15 +182,15 @@
     if (!level.convoy || !state.running || state.ended) return;
     let cart = activeCart();
     if (!cart) {
-      if (!spend(level.convoy.replacementCost)) { toast('Risorse insufficienti per sostituire il carro.'); return; }
-      cart = spawnCart(); toast('Carro sostitutivo pronto alla partenza.');
+      if (!spend(level.convoy.replacementCost)) { toast(`Risorse insufficienti per sostituire il ${vehicleName()}.`); return; }
+      cart = spawnCart(); toast(`${capitalized(vehicleName())} sostitutivo pronto alla partenza.`);
     } else if (cart.moving) {
-      cart.moving = false; toast('Carro fermato. Riparti quando la strada è sicura.');
+      cart.moving = false; toast(`${capitalized(vehicleName())} fermato. Riparti quando la strada è sicura.`);
     } else if (!cartCanDepart(cart)) {
       toast('Per ripartire, conquista il presidio e libera la zona dai nemici.');
     } else {
       cart.moving = true; cart.waiting = false;
-      toast(`Carro in marcia verso ${level.convoy.route[cart.routeIndex + 1].name}.`);
+      toast(`${capitalized(vehicleName())} in marcia verso ${level.convoy.route[cart.routeIndex + 1].name}.`);
     }
     updateHud();
   }
@@ -194,34 +207,96 @@
       if (cart?.moving && moveTo(cart, level.convoy.route[cart.routeIndex + 1], 0, dt)) {
         cart.routeIndex++; cart.moving = false; cart.waiting = true;
         if (cart.routeIndex === level.convoy.route.length - 1) {
-          // Delivery retires this cart without counting as a casualty or occupying population.
-          cart.hp = 0; state.convoy.cartId = null; state.convoy.delivered++;
-          state.units = state.units.filter(u => u !== cart);
-          if (state.convoy.delivered >= level.convoy.goal) { finish(true); return; }
+          state.convoy.cartId = null; state.convoy.delivered++;
+          // A siege engine stays deployed; a supply cart is retired without counting as a casualty.
+          if (level.convoy.keepOnArrival) { cart.deployed = true; cart.fireClock = 0; state.siegeEngineId = cart.id; }
+          else { cart.hp = 0; state.units = state.units.filter(u => u !== cart); }
+          if (state.convoy.delivered >= level.convoy.goal) { missionComplete(); return; }
           spawnCart(); toast(`Consegna ${state.convoy.delivered}/${level.convoy.goal}! Un nuovo carro gratuito ti attende alla base.`);
-        } else toast(`Carro in sosta: ${level.convoy.route[cart.routeIndex].name}. Scorta e presidio pronti? Premi Riprendi.`);
+        } else toast(`${capitalized(vehicleName())} in sosta: ${level.convoy.route[cart.routeIndex].name}. Scorta e presidio pronti? Premi Riprendi.`);
       }
     }
     if (level.control) {
       state.controlTime = Math.min(level.control.goal, state.controlTime + dt * controlRate());
-      if (state.controlTime >= level.control.goal - 1e-8) { state.controlTime = level.control.goal; finish(true); }
+      if (state.controlTime >= level.control.goal - 1e-8) { state.controlTime = level.control.goal; missionComplete(); }
     }
   }
+  // --- Multi-act levels: each act merges its overrides into the base configuration. ---
+  function applyPhase(i) {
+    const phase = baseLevel.phases[i];
+    state.phaseIndex = i;
+    level = { ...baseLevel, ...phase,
+      enemies: baseLevel.enemies.map((e, k) => ({ ...e, post: phase.enemyPosts?.[k] ?? e.post })) };
+  }
+  function missionComplete() {
+    if (isFinale() && state.phaseIndex < actCount() - 1) advancePhase();
+    else finish(true);
+  }
+  function advancePhase() {
+    const done = level, reward = done.reward || {}, home = keep('player');
+    state.wood += reward.wood || 0; state.gold += reward.gold || 0; state.popCap += reward.popCap || 0;
+    let i = 0;
+    for (const [type, count] of reward.units || []) for (let j = 0; j < count; j++, i++) {
+      const x = home.x + 140 + (i % 3) * 32, y = home.y - 70 + Math.floor(i / 3) * 34;
+      createUnit(type, 'player', x, y, { type: 'hold', x, y });
+    }
+    applyPhase(state.phaseIndex + 1);
+    state.controlTime = 0; state.wavePlan = null;
+    state.convoy = level.convoy ? { delivered: 0, lost: 0, cartId: null } : null;
+    if (level.convoy) spawnCart();
+    state.waveIn = Math.max(state.waveIn, level.breather || 0);
+    applyMissionUi();
+    toast(`${done.actTitle}: completato! ${reward.message || ''} ${level.actTitle}: ${level.actIntro}`);
+    state.pings.push({ x: home.x, y: home.y, life: 3, full: 3 });
+    updateHud();
+  }
+  // The deployed siege engine bombards the nearest hostile building in range.
+  function updateSiegeEngine(dt) {
+    const engine = siegeEngine(), cfg = level.siegeEngine;
+    if (!engine || !cfg) return;
+    engine.fireClock = Math.min(cfg.interval, (engine.fireClock || 0) + dt);
+    if (engine.fireClock < cfg.interval) return;
+    const target = state.buildings.filter(b => alive(b) && isEnemy(b.team) && dist(engine, b) <= cfg.range)
+      .sort((a, b) => dist(engine, a) - dist(engine, b))[0];
+    if (!target) return;
+    engine.fireClock = 0; engine.swing = .6;
+    attackEffect(engine, target, 'stone');
+    damage(target, cfg.damage, 'player');
+    burst(target.x, target.y - 20, '#cdbb98', 10, .8);
+  }
+  function applyMissionUi() {
+    $('gameShell').dataset.mission = level.survival ? (level.villages ? 'villages' : 'survival') : level.convoy ? 'escort' : level.control ? 'control' : isFinale() ? 'finale' : '';
+    for (const [id, visible] of [['survivalControls', level.survival], ['focusVillageBtn', level.villages]]) {
+      if (visible) $(id).classList.remove('hidden'); else $(id).classList.add('hidden');
+    }
+    if (isMission() || isFinale()) $('missionPanel').classList.remove('hidden'); else $('missionPanel').classList.add('hidden');
+    if (level.convoy) $('convoyControls').classList.remove('hidden'); else $('convoyControls').classList.add('hidden');
+    $('convoyFocusBtn').textContent = `Centra ${vehicleName()}`;
+    const roleGuide = { market: 'Mercato: oro e deposito', arcane: 'Arcana: maghi', guard: 'Guardia: frecce', forge: 'Forgia: +20% danni' };
+    $('conquestGuide').textContent = level.missionGuide || (isSiege() ? `${level.posts.map(p => p.guide || roleGuide[p.role]).join('. ')}. Ogni torre sottratta al nemico riduce lo scudo della ${citadelName().toLowerCase()} del ${shieldPct()}%.${buildable().includes('depot') ? ' Magazzino: M, vicino al castello o a un punto alleato.' : ''}` : 'Costruisci la caserma (B). Armigero: R, arciere: Q, mago: E. Tieni truppe nell’avamposto per sbloccare i maghi.');
+  }
   function updateMissionHud() {
-    if (!isMission() || level.survival) return;
-    const progress = $('missionProgress');
+    if (level.survival || (!isMission() && !isFinale())) return;
+    const progress = $('missionProgress'), act = isFinale() ? `Atto ${level.act}/${baseLevel.phases[actCount() - 1].act} · ` : '';
+    if (!isMission()) {
+      // Final act: the bar tracks the citadel's destruction.
+      const citadel = keep('enemy'), engine = siegeEngine();
+      progress.max = citadel?.maxHp || 1; progress.value = citadel ? citadel.maxHp - citadel.hp : progress.max;
+      $('missionStatus').textContent = `${act}${citadelName()}: ${Math.ceil(citadel?.hp || 0)} PV · scudo ${Math.round(citadelShield() * 100)}% · ${engine ? 'trabucco in tiro' : 'trabucco distrutto'}`;
+      return;
+    }
     if (level.convoy) {
       const cart = activeCart(), ready = cart && cartCanDepart(cart);
       progress.max = level.convoy.goal; progress.value = state.convoy.delivered;
-      $('missionStatus').textContent = !cart ? 'Carro perso: serve un sostituto.' : cart.moving
+      $('missionStatus').textContent = act + (!cart ? `${capitalized(vehicleName())} perso: serve un sostituto.` : cart.moving
         ? `In marcia · ${Math.ceil(cart.hp)} PV` : cart.waiting && !ready
-          ? `Conquista ${level.convoy.route[cart.routeIndex].name} per ripartire.` : `In sosta · ${Math.ceil(cart.hp)} PV`;
-      $('convoyBtn').textContent = !cart ? `Sostituisci · ${priceText(level.convoy.replacementCost)}` : cart.moving ? 'Ferma carro' : ready ? 'Avvia / riprendi' : 'Presidio da liberare';
+          ? `Conquista ${level.convoy.route[cart.routeIndex].name} per ripartire.` : `In sosta · ${Math.ceil(cart.hp)} PV`);
+      $('convoyBtn').textContent = !cart ? `Sostituisci · ${priceText(level.convoy.replacementCost)}` : cart.moving ? `Ferma ${vehicleName()}` : ready ? 'Avvia / riprendi' : 'Presidio da liberare';
       $('convoyBtn').disabled = !state.running || state.ended || (!cart ? !canPay(level.convoy.replacementCost) : !cart.moving && !ready);
     } else {
       const rate = controlRate();
       progress.max = level.control.goal; progress.value = state.controlTime;
-      $('missionStatus').textContent = `${heldSanctuaries()}/3 santuari sicuri · ${rate ? `rituale ×${String(rate).replace('.', ',')}` : 'rituale fermo'}`;
+      $('missionStatus').textContent = `${act}${heldSanctuaries()}/3 ${level.control.noun || 'santuari sicuri'} · ${rate ? `rituale ×${String(rate).replace('.', ',')}` : 'rituale fermo'}`;
     }
   }
 
@@ -246,7 +321,9 @@
   }
 
   function resetWorld(levelId = level.id) {
-    level = window.RTS_LEVELS.find(l => l.id === levelId) || window.RTS_LEVELS[0];
+    level = baseLevel = window.RTS_LEVELS.find(l => l.id === levelId) || window.RTS_LEVELS[0];
+    state.phaseIndex = 0; state.siegeEngineId = null;
+    if (isFinale()) applyPhase(0);
     W = level.width; H = level.height;
     state.nextLevel = false; state.postIndex = 0; state.wavePlan = null;
     state.idSequence = 0; state.wood = level.start?.wood ?? 200; state.gold = level.start?.gold ?? 110; state.time = 0;
@@ -257,12 +334,6 @@
     state.placing = null; state.lastStandDone = false; state.controlTime = 0;
     state.convoy = level.convoy ? { delivered: 0, lost: 0, cartId: null } : null;
     state.survival = level.survival ? { phase: 'preparation', cleared: 0, warned: false } : null;
-    $('gameShell').dataset.mission = level.survival ? (level.villages ? 'villages' : 'survival') : level.convoy ? 'escort' : level.control ? 'control' : '';
-    for (const [id, visible] of [['survivalControls', level.survival], ['focusVillageBtn', level.villages]]) {
-      if (visible) $(id).classList.remove('hidden'); else $(id).classList.add('hidden');
-    }
-    if (isMission()) $('missionPanel').classList.remove('hidden'); else $('missionPanel').classList.add('hidden');
-    if (level.convoy) $('convoyControls').classList.remove('hidden'); else $('convoyControls').classList.add('hidden');
     state.pointer = null; state.keys.clear(); state.popCap = level.population;
     state.outposts = level.posts.map((p, i) => ({ ...RULES.outpost, ...p, id: `post-${i}`,
       type: 'outpost', control: p.initialOwner ? -1 : 0, owner: p.initialOwner || 'neutral',
@@ -305,8 +376,7 @@
     centerCamera(x + (state.width < 800 ? 20 : 230), y - 5);
     $('placementNotice').classList.add('hidden');
     $('cancelOrderBtn').classList.add('hidden');
-    const roleGuide = { market: 'Mercato: oro e deposito', arcane: 'Arcana: maghi', guard: 'Guardia: frecce', forge: 'Forgia: +20% danni' };
-    $('conquestGuide').textContent = level.missionGuide || (isSiege() ? `${level.posts.map(p => p.guide || roleGuide[p.role]).join('. ')}. Ogni torre sottratta al nemico riduce lo scudo della ${citadelName().toLowerCase()} del ${shieldPct()}%.${buildable().includes('depot') ? ' Magazzino: M, vicino al castello o a un punto alleato.' : ''}` : 'Costruisci la caserma (B). Armigero: R, arciere: Q, mago: E. Tieni truppe nell’avamposto per sbloccare i maghi.');
+    applyMissionUi();
     updateHud();
   }
   function centerCamera(x, y) {
@@ -369,15 +439,19 @@
     const front = waveFront(), live = waveFronts().filter(f => alive(frontHome(f)));
     $('waveText').textContent = `${level.kind !== 'outpost' ? (live.length ? live.map(f => f.name.toUpperCase()).join(' + ') : 'TREGUA') + ' · ' : ''}ONDATA ${state.wave} · ${Math.ceil(Math.max(0, state.waveIn))}s`;
     const plan = state.wavePlan, announcedPost = state.outposts.find(p => p.id === plan?.postId);
-    $('waveNotice').textContent = plan && isMission() && live.length ? (level.control ? 'Assalto: ' + live.map(f => state.outposts[f.post].name).join(' + ') : live.some(f => f.troops === 'knight') ? 'Cavalieri in arrivo: proteggi il carro!' : 'Incursione verso i presidi') : plan?.counter && alive(frontHome(front)) ? `Contrattacco: ${announcedPost.name}` : plan && live.length > 1 ? `Tenaglia: ${live.map(f => f.name).join(' + ')}` : '';
+    $('waveNotice').textContent = plan && isMission() && live.length ? (level.control ? 'Assalto: ' + live.map(f => state.outposts[f.post].name).join(' + ') : live.some(f => f.troops === 'knight') ? `Cavalieri in arrivo: proteggi il ${vehicleName()}!` : 'Incursione verso i presidi') : plan?.counter && alive(frontHome(front)) ? `Contrattacco: ${announcedPost.name}` : plan && live.length > 1 ? `Tenaglia: ${live.map(f => f.name).join(' + ')}` : '';
     const remaining = state.buildings.filter(b => b.type === 'keep' && isEnemy(b.team) && alive(b)).length;
     const fortressTotal = level.enemies.filter(e => !e.type).length, camps = state.buildings.filter(b => b.type === 'camp');
     $('objectiveText').textContent = level.convoy ? `Carri consegnati ${state.convoy.delivered}/${level.convoy.goal} · proteggi il castello` : level.control ? `Sigilli ${Math.floor(state.controlTime)}/${level.control.goal}s · ${heldSanctuaries()}/3 sicuri` : isSiege() ? `${citadelName()} · scudo ${Math.round(citadelShield()*100)}% · campi attivi ${camps.filter(alive).length}/${camps.length}` : level.kind === 'outpost' ? 'Distruggi la fortezza nemica' : `Distruggi le fortezze rivali · ${fortressTotal - remaining}/${fortressTotal}`;
+    if (isFinale()) $('objectiveText').textContent = level.control
+      ? `${level.actTitle} · rituale ${Math.floor(state.controlTime)}/${level.control.goal}s · ${heldSanctuaries()}/3 fari`
+      : level.convoy ? `${level.actTitle} · porta il trabucco alla postazione d’assedio`
+        : `${level.actTitle} · ${citadelName()} · scudo ${Math.round(citadelShield() * 100)}%`;
     if (level.survival) updateSurvivalHud();
     $('levelLabel').textContent = `LIVELLO ${level.id} · ${level.name.toUpperCase()}`;
     const post = state.selected.length === 1 && state.selected[0].type === 'outpost' ? state.selected[0] : state.outposts[state.postIndex];
     const ownerLabel = teamName(post.owner);
-    $('outpostStatus').textContent = `${level.kind !== 'outpost' ? `${level.control ? 'Santuari' : level.convoy ? 'Presidi' : isSiege() ? 'Torri' : 'Avamposti'} ${state.outposts.filter(p => p.owner === 'player').length}/${state.outposts.length} · ${post.name.replace(/^(Avamposto|Torre|Presidio|Santuario) /, '')}` : 'Avamposto'}: ${post.contested ? 'conteso' : ownerLabel.toLowerCase()} · ${Math.round(Math.abs(post.control) * 100)}%`;
+    $('outpostStatus').textContent = `${level.kind !== 'outpost' ? `${level.pointsLabel || (level.control ? 'Santuari' : level.convoy ? 'Presidi' : isSiege() ? 'Torri' : 'Avamposti')} ${state.outposts.filter(p => p.owner === 'player').length}/${state.outposts.length} · ${post.name.replace(/^(Avamposto|Torre|Presidio|Santuario|Faro) /, '')}` : 'Avamposto'}: ${post.contested ? 'conteso' : ownerLabel.toLowerCase()} · ${Math.round(Math.abs(post.control) * 100)}%`;
     $('outpostStatus').title = level.kind !== 'outpost' ? `Clicca per scorrere e selezionare i ${state.outposts.length} punti di controllo` : 'Centra e seleziona l’avamposto';
     $('outpostStatus').dataset.owner = post.contested ? 'contested' : post.owner;
     $('idleBtn').textContent = `⚒ Inattivi: ${playerUnits().filter(u => u.type === 'worker' && !u.order).length}`;
@@ -417,7 +491,8 @@
           ram: 'Ariete d’assedio: ignora le unità e sfonda gli edifici. Corazzato: frecce di arcieri, castello e torri fanno metà danni. Fermalo con armigeri e maghi.',
           knight: 'Cavaliere: velocissimo, razzia contadini e magazzini lontani dal castello. Tieni qualche armigero o arciere vicino ai raccoglitori.',
           champion: 'Campione della Guardia reale: lento ma fortissimo in mischia. Circondalo e colpiscilo da lontano.',
-          cart: 'Carro della missione: non combatte, non conquista e non occupa popolazione. Segue la strada e si ferma ai presidi. Usa i pulsanti del convoglio sopra la minimappa.'
+          warlord: 'Signore della guerra: 1400 PV e colpi devastanti. Finché vive, i nemici entro 220 infliggono il 20% di danni in più. Abbattilo per primo.',
+          cart: u.vehicle === 'trebuchet' ? (u.deployed ? 'Trabucco schierato: ogni 6s scaglia una pietra da 80 danni sull’edificio nemico più vicino entro 950. Difendilo: se viene distrutto il bombardamento finisce.' : 'Trabucco: non combatte e non occupa popolazione. Segue la strada, si ferma al Guado e alla Torre del mercato. Comandalo dai pulsanti sopra la minimappa.') : 'Carro della missione: non combatte, non conquista e non occupa popolazione. Segue la strada e si ferma ai presidi. Usa i pulsanti del convoglio sopra la minimappa.'
         };
         description.textContent = descriptions[u.type];
         if (u.carry) badges += `<span class="stat-pill">Trasporta ${u.carry} ${u.carryType === 'wood' ? 'legno' : 'oro'}</span>`;
@@ -687,6 +762,13 @@
   }
   function damage(victim, amount, attackerTeam = null) {
     if (!alive(victim)) return;
+    if (level.citadelSealed && victim.type === 'keep' && isEnemy(victim.team)) {
+      // Sealed until the final act: hits are absorbed, with a throttled reminder.
+      if (attackerTeam === 'player' && state.time - (state.alertAt.sealed ?? -Infinity) >= RULES.alertCooldown) {
+        state.alertAt.sealed = state.time; toast(`${citadelName()} è sigillata: prima i fari, poi il trabucco.`);
+      }
+      return;
+    }
     if (level.shieldPerTower && victim.type === 'keep' && isEnemy(victim.team)) amount *= 1 - citadelShield();
     victim.hp = Math.max(0, victim.hp - amount); victim.lastHit = state.time;
     if (victim.team === 'player' && isEnemy(attackerTeam) && (!isUnit(victim) || victim.type === 'worker' || victim.type === 'cart')) raiseAlert(victim);
@@ -696,14 +778,15 @@
       state.lastStandDone = true;
       for (const [type, dx, dy] of stand.guards) createUnit(type, victim.team, victim.x + dx, victim.y + dy, { type: 'guard', x: victim.x + dx, y: victim.y + dy });
       state.pings.push({ x: victim.x, y: victim.y, life: 3, full: 3 });
-      toast(`${citadelName()}: esce la Guardia reale, guidata dal Campione!`);
+      toast(`${citadelName()}: ${stand.message || 'esce la Guardia reale, guidata dal Campione!'}`);
     }
     if (!alive(victim)) {
       burst(victim.x, victim.y, '#f9c17a', 18, .9);
       if (attackerTeam === 'player' && isEnemy(victim.team) && isUnit(victim)) state.stats.killed++;
-      if (victim.type === 'cart' && state.convoy) {
+      if (victim.id === state.siegeEngineId) toast('Il trabucco è stato distrutto: il bombardamento è finito, ora tocca all’esercito.');
+      else if (victim.type === 'cart' && state.convoy) {
         state.convoy.cartId = null; state.convoy.lost++;
-        toast('Carro distrutto! Puoi sostituirlo dalla minimappa: 80 legno e 40 oro.');
+        toast(`${capitalized(vehicleName())} distrutto! Puoi sostituirlo dalla minimappa: ${priceText(level.convoy.replacementCost).replace(' · ', ' e ')}.`);
       }
       if (victim.type === 'village') {
         victim.pendingRecruits = 0;
@@ -722,7 +805,7 @@
   }
   function attackEffect(u, victim, kind) {
     state.effects.push({ x: u.x, y: u.y - 18, tx: victim.x, ty: victim.y - 10,
-      kind, life: kind === 'magic' ? .5 : .22, full: kind === 'magic' ? .5 : .22 });
+      kind, life: kind === 'magic' ? .5 : kind === 'stone' ? .9 : .22, full: kind === 'magic' ? .5 : kind === 'stone' ? .9 : .22 });
   }
   function performAttack(u, victim, dt, stationary = false) {
     if (!alive(victim)) return true;
@@ -732,7 +815,7 @@
     if (u.cooldown > 0) return false;
     u.cooldown = u.attackTime; u.swing = .24;
     const building = !isUnit(victim);
-    const forge = forgeMultiplier(u.team);
+    const forge = forgeMultiplier(u.team) * auraMultiplier(u);
     const multiplier = (building ? (u.type === 'mage' ? .35 : u.type === 'archer' ? .45 : 1) : 1) * (u.type === 'archer' ? arrowFactor(victim) : 1);
     damage(victim, u.damage * multiplier * forge, u.team);
     if (u.type === 'mage') {
@@ -986,6 +1069,16 @@
     state.ended = true; state.running = false; state.nextLevel = won && level.id < window.RTS_LEVELS.length; cancelBuild();
     $('levelPicker').classList.add('hidden');
     $('chooseLevelBtn').classList.remove('hidden');
+    if (isFinale()) {
+      $('modalTitle').textContent = won ? 'L’alba è sorta sul confine!' : 'Il castello è caduto';
+      $('modalSubtitle').textContent = won
+        ? `Vittoria in ${fmtTime(state.time)}! Fari accesi, trabucco schierato e ${citadelName().toLowerCase()} abbattuta: la campagna è conclusa. Nemici sconfitti: ${state.stats.killed}. Risorse raccolte: ${state.stats.gathered}.`
+        : `Il castello è caduto durante l’${level.actTitle.replace(/^Atto /, 'atto ')}. Hai resistito ${fmtTime(state.time)} e sconfitto ${state.stats.killed} nemici. Ricominciando si riparte dall’atto I.`;
+      $('modalGuide').classList.add('hidden');
+      $('modalButton').innerHTML = 'Riprova il livello <span aria-hidden="true">↻</span>';
+      $('modal').classList.remove('hidden');
+      return;
+    }
     $('modalTitle').textContent = won ? (level.survival ? 'Hai resistito fino all’alba!' : 'Il regno è salvo!') : reason === 'villages' ? 'I villaggi sono perduti' : 'Il castello è caduto';
     $('modalSubtitle').textContent = won
       ? `Vittoria in ${fmtTime(state.time)}! ${level.survival ? `${state.survival.cleared} ondate superate${level.villages ? ` e ${livingVillages().length} villaggi salvati` : ': il castello resiste'}` : level.convoy ? 'Tre carri consegnati: la fortezza alleata è rifornita' : level.control ? 'I sigilli sono ricomposti: la frontiera è al sicuro' : `Hai distrutto ${isSiege() ? `la ${citadelName().toLowerCase()}: l’assedio è finito` : level.kind === 'outpost' ? 'la fortezza nemica' : 'entrambe le fortezze rivali'}`}. Nemici sconfitti: ${state.stats.killed}. Risorse raccolte: ${state.stats.gathered}.`
@@ -1051,6 +1144,8 @@
     updateOutpost(dt);
     updateTowerDefenses(dt);
     updateMissions(dt);
+    if (state.ended) { updateHud(); return; }
+    if (level.siegeEngine) updateSiegeEngine(dt);
     if (state.ended) { updateHud(); return; }
     for (const ping of state.pings) ping.life -= dt;
     state.pings = state.pings.filter(ping => ping.life > 0);
@@ -1235,6 +1330,12 @@
       ellipse(b.x,b.y+10,b.type==='keep'?80:65,b.type==='keep'?50:44,'#e2cb7670');
       ellipse(b.x,b.y+10,b.type==='keep'?74:60,b.type==='keep'?46:40,'#3c6f4b79');
     }
+    if (level.citadelSealed && b.type === 'keep' && isEnemy(b.team)) {
+      // The golden seal marks a citadel that cannot be damaged yet.
+      ctx.strokeStyle = '#f2cf6b';ctx.lineWidth = 4;ctx.setLineDash([4,7]);
+      ctx.beginPath();ctx.ellipse(b.x,b.y-25,118,132,0,0,TWO_PI);ctx.stroke();ctx.setLineDash([]);
+      ctx.font='bold 11px system-ui';ctx.fillStyle='#f6dc8f';ctx.textAlign='center';ctx.fillText('SIGILLATA',b.x,b.y-150);
+    }
     if (level.shieldPerTower && b.type === 'keep' && isEnemy(b.team) && citadelShield() > 0) {
       ctx.strokeStyle = '#b9a2ed';ctx.lineWidth = 3;ctx.setLineDash([10,6]);
       ctx.beginPath();ctx.ellipse(b.x,b.y-25,105,120,0,0,TWO_PI);ctx.stroke();ctx.setLineDash([]);
@@ -1292,7 +1393,24 @@
     ctx.restore();
     if(u.hp<u.maxHp)drawHealth(u,u.x,u.y-44,34);
   }
+  function drawTrebuchet(u) {
+    ctx.save(); ctx.translate(u.x,u.y);
+    ellipse(0,14,44,16,'#20352d88');
+    if (state.selected.includes(u)) { ctx.strokeStyle='#f4dda5';ctx.lineWidth=2;ctx.strokeRect(-46,-78,92,104); }
+    for (const x of [-30,30]) for (const y of [-2,20]) { ellipse(x,y,8,10,'#453b2b');ellipse(x,y,4,6,'#b28b50'); }
+    roundedRect(-38,-6,76,20,4,'#7b5634');
+    ctx.strokeStyle='#5f4128';ctx.lineWidth=6;ctx.beginPath();ctx.moveTo(-22,8);ctx.lineTo(0,-44);ctx.lineTo(22,8);ctx.stroke();
+    // The throwing arm swings forward after each shot.
+    const angle = u.swing > 0 ? -1.2 : .55;
+    ctx.save();ctx.translate(0,-44);ctx.rotate(angle);
+    ctx.strokeStyle='#8a6440';ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(-22,0);ctx.lineTo(52,0);ctx.stroke();
+    roundedRect(-34,-8,18,22,3,'#6d6a5c');ellipse(54,2,6,6,'#b9ad92');
+    ctx.restore();
+    if (u.deployed) { ctx.fillStyle='#f4dda5';ctx.font='bold 10px system-ui';ctx.textAlign='center';ctx.fillText('TRABUCCO',0,40); }
+    ctx.restore(); drawHealth(u,u.x,u.y-88,64);
+  }
   function drawCart(u) {
+    if (u.vehicle === 'trebuchet') { drawTrebuchet(u); return; }
     ctx.save(); ctx.translate(u.x,u.y);
     ellipse(0,10,32,15,'#20352d88');
     if (state.selected.includes(u)) { ctx.strokeStyle='#f4dda5';ctx.lineWidth=2;ctx.strokeRect(-34,-34,68,62); }
@@ -1311,16 +1429,20 @@
     const route=level.convoy.route, end=route[route.length-1];
     ctx.save();ctx.strokeStyle='#ecd08c99';ctx.lineWidth=3;ctx.setLineDash([12,12]);ctx.beginPath();
     route.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke();ctx.setLineDash([]);
-    drawKeep({x:end.x,y:end.y,team:'player'});
-    ctx.fillStyle='#f4dda5';ctx.font='bold 12px system-ui';ctx.textAlign='center';ctx.fillText('FORTEZZA ALLEATA · CONSEGNA',end.x,end.y+65);
+    if (!level.convoy.deliveryLabel) drawKeep({x:end.x,y:end.y,team:'player'});
+    else { ctx.strokeStyle='#ecd08c';ctx.lineWidth=3;ctx.beginPath();ctx.arc(end.x,end.y,40,0,TWO_PI);ctx.stroke(); }
+    ctx.fillStyle='#f4dda5';ctx.font='bold 12px system-ui';ctx.textAlign='center';ctx.fillText(level.convoy.deliveryLabel || 'FORTEZZA ALLEATA · CONSEGNA',end.x,end.y+65);
     ctx.restore();
   }
   function drawUnit(u) {
     if (u.type === 'cart') { drawCart(u); return; }
     if (u.type === 'ram') { drawRam(u); return; }
     if (u.type === 'knight') { drawKnight(u); return; }
+    const aura = RULES.units[u.type]?.aura;
+    if (aura) { ctx.save();ctx.strokeStyle='#e0574a66';ctx.lineWidth=2;ctx.setLineDash([6,8]);ctx.beginPath();ctx.ellipse(u.x,u.y+4,aura.radius,aura.radius*.62,0,0,TWO_PI);ctx.stroke();ctx.restore(); }
     ctx.save();ctx.translate(u.x,u.y);
     if(u.type==='champion')ctx.scale(1.4,1.4);
+    if(u.type==='warlord'){ctx.scale(1.6,1.6);ctx.beginPath();ctx.moveTo(-10,-12);ctx.lineTo(10,-12);ctx.lineTo(15,12);ctx.lineTo(-15,12);ctx.closePath();ctx.fillStyle='#5a1f2a';ctx.fill();}
     const isWorker=u.type==='worker',enemy=isEnemy(u.team);
     if(state.selected.includes(u)){
       ellipse(0,2,19,10,'#d5cb735c');
@@ -1360,13 +1482,13 @@
       ctx.beginPath();ctx.ellipse(-12,-4,7,10,-.20,0,TWO_PI);ctx.fillStyle=u.team==='enemy2'?'#b381cb':enemy?'#b66d49':'#d4be7b';ctx.fill();
       ctx.beginPath();ctx.ellipse(-12,-4,4,7,-.20,0,TWO_PI);ctx.fillStyle=enemy?'#6a3b35':'#476a63';ctx.fill();
       ctx.strokeStyle='#cdd0cd';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(12,-5);ctx.lineTo(16,-25-(u.swing?8:0));ctx.stroke();
-      if(u.type==='champion'){
+      if(u.type==='champion'||u.type==='warlord'){
         ctx.beginPath();ctx.moveTo(-8,-29);ctx.lineTo(-8,-37);ctx.lineTo(-4,-32);ctx.lineTo(0,-39);ctx.lineTo(4,-32);ctx.lineTo(8,-37);ctx.lineTo(8,-29);ctx.closePath();
-        ctx.fillStyle='#e9c35f';ctx.fill();ctx.strokeStyle='#8d6e3c';ctx.lineWidth=1;ctx.stroke();
+        ctx.fillStyle=u.type==='warlord'?'#4a3b57':'#e9c35f';ctx.fill();ctx.strokeStyle=u.type==='warlord'?'#c9a6e8':'#8d6e3c';ctx.lineWidth=1;ctx.stroke();
       }
     }
     ctx.restore();
-    if(u.hp<u.maxHp)drawHealth(u,u.x,u.y-(u.type==='champion'?54:36),u.type==='champion'?44:32);
+    if(u.hp<u.maxHp)drawHealth(u,u.x,u.y-({champion:54,warlord:62}[u.type]??36),{champion:44,warlord:54}[u.type]??32);
   }
   function drawParticles() {
     for(const p of state.particles) {
@@ -1401,6 +1523,14 @@
   function drawEffects() {
     for (const e of state.effects) {
       ctx.save(); ctx.globalAlpha = clamp(e.life / e.full, 0, 1);
+      if (e.kind === 'stone') {
+        // A heavy stone flies on an arc and lands as the effect ends.
+        const t = 1 - e.life / e.full, arc = Math.sin(Math.PI * t) * 160;
+        ctx.globalAlpha = 1;
+        ellipse(e.x + (e.tx - e.x) * t, e.y + (e.ty - e.y) * t - arc, 8, 8, '#8c8576');
+        ellipse(e.x + (e.tx - e.x) * t - 2, e.y + (e.ty - e.y) * t - arc - 2, 3, 3, '#c9c0aa');
+        ctx.restore(); continue;
+      }
       ctx.strokeStyle = e.kind === 'magic' ? '#ddbbff' : '#f3dfa1'; ctx.lineWidth = e.kind === 'magic' ? 3 : 2;
       ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.tx, e.ty); ctx.stroke();
       if (e.kind === 'magic') {
@@ -1535,14 +1665,14 @@
     state.running=true;state.ended=false;
     $('modal').classList.add('hidden');
     canvas.focus({preventScroll:true}); updateHud();
-    toast(state.time > 0 ? 'Partita ripresa.' : level.survival ? `Hai 90s per prepararti. ${level.villages ? 'Difendi castello e villaggi; ripara gli edifici con i contadini.' : 'Prepara le difese del castello e conquista Mercato e Mulino.'}` : level.convoy ? 'Prepara la scorta. Il primo carro gratuito aspetta il tuo ordine alla base.' : level.control ? 'Conquista due santuari: il rituale richiede 180 secondi di controllo sicuro.' : isSiege() ? `Le ${countWord(level.posts.filter(p => p.initialOwner).length)} torri proteggono la ${citadelName().toLowerCase()}. Conquista il Mercato per sostenere l’assedio.` : 'Raccogli risorse, prepara l’esercito e conquista l’avamposto.');
+    toast(state.time > 0 ? 'Partita ripresa.' : level.startHint ? level.startHint : level.survival ? `Hai 90s per prepararti. ${level.villages ? 'Difendi castello e villaggi; ripara gli edifici con i contadini.' : 'Prepara le difese del castello e conquista Mercato e Mulino.'}` : level.convoy ? 'Prepara la scorta. Il primo carro gratuito aspetta il tuo ordine alla base.' : level.control ? 'Conquista due santuari: il rituale richiede 180 secondi di controllo sicuro.' : isSiege() ? `Le ${countWord(level.posts.filter(p => p.initialOwner).length)} torri proteggono la ${citadelName().toLowerCase()}. Conquista il Mercato per sostenere l’assedio.` : 'Raccogli risorse, prepara l’esercito e conquista l’avamposto.');
   }
   function openHelp() {
     state.running=false;state.keys.clear();
     $('levelPicker').classList.add('hidden');
     $('chooseLevelBtn').classList.remove('hidden');
     $('modalTitle').textContent='Come si gioca';
-    $('modalSubtitle').textContent=isMission() ? `Partita in pausa. ${level.description}` : isSiege() ? `Partita in pausa. ${level.description} I contrattacchi sono annunciati ${level.warningTime} secondi prima sulla minimappa.` : 'Partita in pausa. Conquista almeno un avamposto per reclutare maghi e depositare risorse. Ogni avamposto alleato e non conteso produce oro. Proteggi le unità a distanza con gli armigeri.';
+    $('modalSubtitle').textContent=isFinale() ? `Partita in pausa. ${level.actTitle}: ${level.actIntro} ${level.missionGuide}` : isMission() ? `Partita in pausa. ${level.description}` : isSiege() ? `Partita in pausa. ${level.description} I contrattacchi sono annunciati ${level.warningTime} secondi prima sulla minimappa.` : 'Partita in pausa. Conquista almeno un avamposto per reclutare maghi e depositare risorse. Ogni avamposto alleato e non conteso produce oro. Proteggi le unità a distanza con gli armigeri.';
     $('modalGuide').classList.remove('hidden');
     $('modalButton').innerHTML='Torna alla partita <span aria-hidden="true">→</span>';
     $('modal').classList.remove('hidden');
@@ -1682,6 +1812,6 @@
   }
   resize();restart();setupInput();requestAnimationFrame(frame);
   // Expose a tiny read-only diagnostic surface for automated smoke tests.
-  Object.defineProperty(window,'__rtsDebug',{value:{snapshot:()=>({level:level.id,survival:state.survival?{...state.survival,remaining:waveEnemies().length}:null,villages:villages().map(b=>({name:b.frontName,hp:b.hp,pendingRecruits:b.pendingRecruits})),mission:level.kind,delivered:state.convoy?.delivered??null,lostCarts:state.convoy?.lost??null,cart:activeCart()?{x:activeCart().x,y:activeCart().y,hp:activeCart().hp,moving:activeCart().moving,routeIndex:activeCart().routeIndex}:null,controlTime:state.controlTime,controlRate:controlRate(),width:W,height:H,popCap:state.popCap,shield:Math.round(citadelShield()*100),camps:state.buildings.filter(b=>b.type==='camp'&&alive(b)).length,waveIn:state.waveIn,counterTarget:state.wavePlan?.counter?state.wavePlan.postId:null,fortresses:state.buildings.filter(b=>b.type==='keep'&&isEnemy(b.team)&&alive(b)).length,outposts:state.outposts.map(p=>({name:p.name,owner:p.owner,contested:p.contested})),camera:{...state.camera},running:state.running,ended:state.ended,time:state.time,wood:state.wood,gold:state.gold,units:state.units.length,buildings:state.buildings.length,wave:state.wave,reserved:reservedPopulation(),outpost:state.outpost.owner,selected:state.selected.map(u=>u.type)})},configurable:false});
+  Object.defineProperty(window,'__rtsDebug',{value:{snapshot:()=>({level:level.id,act:isFinale()?level.act:null,survival:state.survival?{...state.survival,remaining:waveEnemies().length}:null,villages:villages().map(b=>({name:b.frontName,hp:b.hp,pendingRecruits:b.pendingRecruits})),mission:level.kind,delivered:state.convoy?.delivered??null,lostCarts:state.convoy?.lost??null,cart:activeCart()?{x:activeCart().x,y:activeCart().y,hp:activeCart().hp,moving:activeCart().moving,routeIndex:activeCart().routeIndex}:null,controlTime:state.controlTime,controlRate:controlRate(),width:W,height:H,popCap:state.popCap,shield:Math.round(citadelShield()*100),camps:state.buildings.filter(b=>b.type==='camp'&&alive(b)).length,waveIn:state.waveIn,counterTarget:state.wavePlan?.counter?state.wavePlan.postId:null,fortresses:state.buildings.filter(b=>b.type==='keep'&&isEnemy(b.team)&&alive(b)).length,outposts:state.outposts.map(p=>({name:p.name,owner:p.owner,contested:p.contested})),camera:{...state.camera},running:state.running,ended:state.ended,time:state.time,wood:state.wood,gold:state.gold,units:state.units.length,buildings:state.buildings.length,wave:state.wave,reserved:reservedPopulation(),outpost:state.outpost.owner,selected:state.selected.map(u=>u.type)})},configurable:false});
 })();
 

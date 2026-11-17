@@ -28,7 +28,7 @@ function game(level = 1) {
   const anchor = '  // Expose a tiny read-only diagnostic surface for automated smoke tests.';
   assert.ok(source.includes(anchor), 'test injection anchor exists');
   vm.runInContext(source.replace(anchor,
-    '  globalThis.testGame = {state, createUnit, createBuilding, resetWorld, keep, select, recruit, cancelTraining, reservedPopulation, orderUnits, update, updateWorker, updateFighter, updateOutpost, updateTraining, performAttack, damage, startWave, depositCargo, dispatchCommand, startGame, restart, finish, validBuild, citadelShield, updateTowerDefenses, planWave, frontHome, waveFront, waveFronts, forgeMultiplier, updateRam, saveGroup, recallGroup, selectSameType, nearestDepot, updateDefenses, beginBuild, placeBuilding, cancelBuild, updateTowerDefenses, updateMissions, convoyAction, activeCart, controlRate, heldSanctuaries, selectArmy, playerUnits, updateHud, startSurvivalWave, updateSurvivalClock, updateSurvival, waveEnemies, livingVillages, focusVillage, focusSurvivalEnemy};\n' + anchor), sandbox);
+    '  globalThis.testGame = {state, createUnit, createBuilding, resetWorld, keep, select, recruit, cancelTraining, reservedPopulation, orderUnits, update, updateWorker, updateFighter, updateOutpost, updateTraining, performAttack, damage, startWave, depositCargo, dispatchCommand, startGame, restart, finish, validBuild, citadelShield, updateTowerDefenses, planWave, frontHome, waveFront, waveFronts, forgeMultiplier, updateRam, saveGroup, recallGroup, selectSameType, nearestDepot, updateDefenses, beginBuild, placeBuilding, cancelBuild, updateTowerDefenses, updateMissions, convoyAction, activeCart, controlRate, heldSanctuaries, selectArmy, playerUnits, updateHud, startSurvivalWave, updateSurvivalClock, updateSurvival, waveEnemies, livingVillages, focusVillage, focusSurvivalEnemy, applyPhase, advancePhase, missionComplete, updateSiegeEngine, siegeEngine, auraMultiplier, startWave, waveFronts};\n' + anchor), sandbox);
   const g = sandbox.testGame; g.resetWorld(level); g.state.running = true; g.elements = elements;
   g.step = (seconds, fn = g.update) => { for (let i = 0; i < Math.ceil(seconds * 60); i++) fn(1 / 60); };
   return g;
@@ -1021,7 +1021,7 @@ test('waves cannot overlap, rewards happen once, and major waves grant longer re
   }
 });
 
-test('victory requires every wave and its last survivor; level 8 advances to 9', () => {
+test('victory requires every wave and its last survivor; level 8 advances to 9 and 9 to 10', () => {
   for (const id of [8, 9]) {
     const g = game(id), s = g.state, total = id === 8 ? 12 : 10;
     if (id === 9) g.damage(g.livingVillages()[0], 10000, 'enemy');
@@ -1033,7 +1033,7 @@ test('victory requires every wave and its last survivor; level 8 advances to 9',
       g.damage(last, 10000, 'player'); g.updateMissions(0);
       assert.equal(s.ended, i === total - 1);
     }
-    assert.equal(s.nextLevel, id === 8); assert.equal(s.survival.cleared, total);
+    assert.equal(s.nextLevel, true); assert.equal(s.survival.cleared, total);
     assert.match(g.elements.get('modalSubtitle').textContent, new RegExp(`${total} ondate`));
     if (id === 8) { g.startGame(); assert.equal(g.livingVillages().length, 2); assert.equal(s.survival.cleared, 0); }
   }
@@ -1178,4 +1178,162 @@ test('each village has its own attack alert, and restarting clears survival prog
   assert.equal(s.survival.cleared, 1);
   g.restart(8); assert.equal(s.survival.cleared, 0); assert.equal(s.waveIn, 90); assert.equal(g.livingVillages().length, 0);
   g.restart(1); assert.equal(s.survival, null); assert.equal(s.popCap, 18);
+});
+
+// --- Level 10: three acts in one match ---
+const toActThree = g => {
+  g.advancePhase();
+  const cart = g.activeCart(); cart.routeIndex = 2; cart.x = 3149.8; cart.y = 1500; cart.moving = true; cart.waiting = false;
+  g.updateMissions(1 / 60);
+  return cart;
+};
+
+test('level ten starts in act one with eight posts, a shield of four towers and a sealed citadel', () => {
+  const g = game(10), s = g.state, citadel = g.keep('enemy');
+  assert.equal(s.phaseIndex, 0); assert.equal(s.popCap, 42); assert.equal(s.wood, 300); assert.equal(s.gold, 180);
+  assert.equal(s.outposts.length, 8);
+  assert.deepEqual(s.outposts.map(p => p.owner).join(), 'neutral,neutral,enemy,enemy,enemy,enemy,enemy,enemy');
+  assert.ok(Math.abs(g.citadelShield() - .6) < 1e-8);
+  assert.equal(citadel.hp, 3000); g.damage(citadel, 500, 'player'); assert.equal(citadel.hp, 3000);
+  assert.match(g.elements.get('toast').textContent, /sigillata/);
+  assert.match(g.elements.get('objectiveText').textContent, /Atto I/);
+  assert.equal(s.buildings.filter(b => b.type === 'camp').length, 3); assert.equal(s.buildings.filter(b => b.type === 'bastion').length, 2);
+  assert.equal(s.nodes.filter(n => n.rich).length, 5);
+  for (const n of s.nodes) {
+    assert.ok(s.buildings.every(b => Math.hypot(b.x - n.x, b.y - n.y) > 150), `node ${n.x},${n.y} near a building`);
+    assert.ok(s.outposts.every(p => Math.hypot(p.x - n.x, p.y - n.y) > p.radius + n.r), `node ${n.x},${n.y} inside a post`);
+  }
+  assert.equal(g.activeCart(), undefined);
+});
+
+test('act one: the beacons drive the ritual and its completion calls the allies', () => {
+  const g = game(10), s = g.state, beacons = s.outposts.slice(0, 3);
+  s.units = s.units.filter(u => u.team === 'player'); s.waveIn = 1000;
+  beacons[0].owner = 'player'; assert.equal(g.controlRate(), 0);
+  beacons[1].owner = 'player'; assert.equal(g.controlRate(), 1);
+  // Captured towers are not beacons: they never speed up the ritual.
+  s.outposts[4].owner = 'player'; assert.equal(g.controlRate(), 1);
+  beacons[2].owner = 'player'; assert.equal(g.controlRate(), 1.5);
+  const soldiers = g.playerUnits().filter(u => u.type === 'soldier').length, gold = s.gold;
+  g.step(59, g.updateMissions); assert.equal(s.phaseIndex, 0);
+  g.step(1.2, g.updateMissions);
+  assert.equal(s.phaseIndex, 1); assert.equal(s.popCap, 48); assert.equal(s.gold, gold + 150);
+  assert.equal(g.playerUnits().filter(u => u.type === 'soldier').length, soldiers + 4);
+  assert.equal(g.playerUnits().filter(u => u.type === 'archer').length, 2);
+  const cart = g.activeCart(); assert.ok(cart); assert.equal(cart.vehicle, 'trebuchet'); assert.equal(cart.maxHp, 900); assert.equal(cart.speed, 42);
+  assert.ok(s.waveIn >= 40); assert.equal(s.controlTime, 0);
+  assert.match(g.elements.get('objectiveText').textContent, /Atto II/);
+});
+
+test('act one waves head for the beacons', () => {
+  const g = game(10), s = g.state;
+  for (const [wave, front, post] of [[1, 'Campo nord', 0], [2, 'Campo sud', 2], [3, 'Scuderie', 1]]) {
+    s.wave = wave; assert.equal(g.waveFronts()[0].name, front);
+    const count = s.units.length; g.startWave();
+    assert.ok(s.units.slice(count).every(u => u.order.postId === s.outposts[post].id && u.order.viaOutpost));
+  }
+});
+
+test('act two: the trebuchet stops at the ford and the market, then deploys and starts act three', () => {
+  const g = game(10), s = g.state;
+  g.advancePhase(); s.units = s.units.filter(u => u.team === 'player'); s.waveIn = 1000;
+  const cart = g.activeCart(), wood = s.wood, gold = s.gold;
+  g.convoyAction(); assert.equal(cart.moving, true);
+  g.step(45, g.updateMissions); assert.equal(cart.routeIndex, 1); assert.equal(cart.moving, false);
+  g.convoyAction(); assert.equal(cart.moving, false);
+  s.outposts[3].owner = 'player'; g.convoyAction(); assert.equal(cart.moving, true);
+  g.step(15, g.updateMissions); assert.equal(cart.routeIndex, 2);
+  s.outposts[4].owner = 'player'; g.convoyAction();
+  g.step(12, g.updateMissions);
+  assert.equal(s.phaseIndex, 2); assert.equal(cart.hp, 900); assert.equal(cart.deployed, true);
+  assert.equal(g.siegeEngine(), cart); assert.equal(s.wood, wood + 100); assert.equal(s.gold, gold + 100);
+  assert.equal(s.convoy, null);
+  assert.match(g.elements.get('objectiveText').textContent, /Atto III/);
+});
+
+test('a lost trebuchet does not end act two and costs 150 wood and 90 gold to replace', () => {
+  const g = game(10), s = g.state;
+  g.advancePhase(); g.damage(g.activeCart(), 10000, 'enemy');
+  assert.equal(s.ended, false); assert.equal(g.activeCart(), undefined);
+  s.wood = 1000; s.gold = 1000; g.convoyAction();
+  assert.equal(s.wood, 850); assert.equal(s.gold, 910); assert.equal(g.activeCart().hp, 900);
+});
+
+test('act three: the deployed trebuchet bombards the nearest building in range, shield included', () => {
+  const g = game(10), s = g.state, engine = toActThree(g), citadel = g.keep('enemy');
+  assert.equal(s.phaseIndex, 2);
+  g.damage(citadel, 100, 'player'); assert.ok(Math.abs(citadel.hp - (3000 - 40)) < 1e-8);
+  const bastions = s.buildings.filter(b => b.type === 'bastion');
+  g.updateSiegeEngine(5.9); assert.ok(bastions.every(b => b.hp === 900));
+  g.updateSiegeEngine(.2); assert.equal(bastions.filter(b => b.hp === 820).length, 1);
+  assert.ok(s.effects.some(e => e.kind === 'stone'));
+  bastions.forEach(b => g.damage(b, 10000, 'player'));
+  const before = citadel.hp; g.updateSiegeEngine(6);
+  assert.ok(Math.abs(citadel.hp - (before - 80 * .4)) < 1e-8);
+  g.damage(engine, 10000, 'enemy'); assert.equal(s.ended, false);
+  const hp = citadel.hp; g.updateSiegeEngine(10); assert.equal(citadel.hp, hp);
+});
+
+test('the warlord sorties once below half and his aura strengthens nearby allies', () => {
+  const g = game(10), s = g.state; toActThree(g);
+  const citadel = g.keep('enemy');
+  s.outposts.forEach(p => { p.owner = 'player'; });
+  g.damage(citadel, 1400, 'player'); assert.equal(s.units.filter(u => u.type === 'warlord').length, 0);
+  g.damage(citadel, 200, 'player');
+  const warlord = s.units.find(u => u.type === 'warlord');
+  assert.ok(warlord); assert.equal(warlord.maxHp, 1400);
+  assert.match(g.elements.get('toast').textContent, /Signore della guerra/);
+  g.damage(citadel, 100, 'player'); assert.equal(s.units.filter(u => u.type === 'warlord').length, 1);
+  const near = g.createUnit('raider', 'enemy', warlord.x + 100, warlord.y), far = g.createUnit('raider', 'enemy', warlord.x + 500, warlord.y);
+  assert.ok(Math.abs(g.auraMultiplier(near) - 1.2) < 1e-8); assert.equal(g.auraMultiplier(far), 1); assert.equal(g.auraMultiplier(warlord), 1);
+  const victim = g.createUnit('soldier', 'player', near.x + 20, near.y);
+  g.performAttack(near, victim, 1 / 60); assert.ok(Math.abs(victim.hp - (125 - 12)) < 1e-8);
+  g.damage(warlord, 10000, 'player'); assert.equal(g.auraMultiplier(near), 1);
+});
+
+test('destroying the citadel in act three ends the campaign; the castle can fall in any act', () => {
+  const g = game(10), s = g.state; toActThree(g);
+  g.damage(g.keep('enemy'), 100000, 'player');
+  assert.equal(s.ended, true); assert.equal(s.nextLevel, false);
+  assert.match(g.elements.get('modalTitle').textContent, /alba/);
+  assert.match(g.elements.get('modalSubtitle').textContent, /campagna è conclusa/);
+  for (const acts of [0, 1, 2]) {
+    const h = game(10);
+    if (acts === 1) h.advancePhase(); else if (acts === 2) toActThree(h);
+    assert.equal(h.state.phaseIndex, acts);
+    h.damage(h.keep('player'), 100000, 'enemy');
+    assert.equal(h.state.ended, true); assert.equal(h.elements.get('modalTitle').textContent, 'Il castello è caduto');
+  }
+});
+
+test('restarting level ten returns to act one; level nine leads to level ten', () => {
+  const g = game(10), s = g.state; toActThree(g);
+  g.restart(10);
+  assert.equal(s.phaseIndex, 0); assert.equal(s.popCap, 42); assert.equal(g.siegeEngine(), undefined);
+  assert.equal(s.convoy, null); assert.equal(s.controlTime, 0); assert.equal(g.keep('enemy').hp, 3000);
+  g.damage(g.keep('enemy'), 500, 'player'); assert.equal(g.keep('enemy').hp, 3000);
+  const h = game(9); h.finish(true); assert.equal(h.state.nextLevel, true);
+  h.startGame(); assert.equal(h.state.popCap, 42); assert.equal(h.state.phaseIndex, 0);
+});
+
+test('starting soldiers cannot harm the sealed citadel in act one', () => {
+  const g = game(10), s = g.state;
+  const soldiers = s.units.filter(u => u.type === 'soldier' && u.team === 'player');
+  soldiers.forEach(u => { u.x += 3200; u.order = { type: 'attack', targetId: g.keep('enemy').id }; });
+  g.step(90);
+  assert.equal(g.keep('enemy').hp, 3000); assert.ok(soldiers.every(u => u.hp === 0));
+});
+
+test('a prepared army of 48 with the trebuchet deployed can win act three', () => {
+  const g = game(10), s = g.state; toActThree(g);
+  s.outposts.forEach(p => { p.owner = 'player'; p.control = 1; });
+  s.units = s.units.filter(u => u.team !== 'player' || u.type === 'worker' || u.type === 'cart');
+  for (const [type, count] of [['soldier', 22], ['archer', 15], ['mage', 8]]) {
+    for (let i = 0; i < count; i++) g.createUnit(type, 'player', 3300 - (type === 'soldier' ? 0 : 120), 1180 + i * 22,
+      { type: 'attack-move', x: 4050, y: 1500 });
+  }
+  assert.equal(g.playerUnits().length, 48);
+  g.step(170);
+  assert.equal(s.lastStandDone, true);
+  assert.equal(g.keep('enemy').hp, 0); assert.equal(s.ended, true);
 });

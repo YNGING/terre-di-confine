@@ -19,7 +19,9 @@
       // Fast raiders that hunt workers and depots far from the castle.
       knight: { hp: 110, speed: 150, damage: 13, attackTime: 1, range: 28 },
       champion: { hp: 650, speed: 70, damage: 30, attackTime: 1.2, range: 32 },
-      cart: { hp: 480, speed: 60, damage: 0, attackTime: 1, range: 0 }
+      cart: { hp: 480, speed: 60, damage: 0, attackTime: 1, range: 0 },
+      // Final boss: his aura strengthens nearby allies while he lives.
+      warlord: { hp: 1400, speed: 62, damage: 40, attackTime: 1.4, range: 34, aura: { radius: 220, bonus: .2 } }
     },
     // Player constructions; a level lists the ones it allows (default: barracks only).
     buildings: {
@@ -35,7 +37,7 @@
     population: 18, queueLimit: 5, firstWave: 75, carryCapacity: 18,
     outpost: { x: 1200, y: 795, radius: 135, captureTime: 12, incomeTime: 8, gold: 8 },
     names: { worker: 'Contadino', soldier: 'Armigero', archer: 'Arciere', mage: 'Mago',
-      cart: 'Carro di rifornimenti', raider: 'Predone', ram: 'Ariete', knight: 'Cavaliere', champion: 'Campione', depot: 'Magazzino', bastion: 'Bastione', keep: 'Castello', barracks: 'Caserma', outpost: 'Avamposto' }
+      cart: 'Carro di rifornimenti', raider: 'Predone', ram: 'Ariete', knight: 'Cavaliere', champion: 'Campione', warlord: 'Signore della guerra', depot: 'Magazzino', bastion: 'Bastione', keep: 'Castello', barracks: 'Caserma', outpost: 'Avamposto' }
   };
   // Each scenario owns its map and pacing; unit balance is shared.
   window.RTS_LEVELS = [
@@ -299,6 +301,73 @@
       villages: [
         {"id": "harvest", "name": "Borgo delle spighe", "x": 850, "y": 700, "hp": 1000, "benefit": "30 legno e 20 oro dopo ogni ondata."},
         {"id": "militia", "name": "Borgo della milizia", "x": 2400, "y": 1450, "hp": 1000, "benefit": "Un armigero ogni due ondate; attende se la popolazione è piena."}
+      ]
+    },
+    {
+      id: 10, name: 'L’alba del confine', kind: 'siege', width: 4500, height: 3000, population: 42,
+      firstWave: 75, waveCap: 14, enemyHp: 3000, campHp: 850, minWaveInterval: 36,
+      start: { wood: 300, gold: 180 }, shieldPerTower: .15, warningTime: 20,
+      buildings: ['barracks', 'depot'], forwardBuild: true, factionName: 'Corona del confine', pointsLabel: 'Punti',
+      extraGuards: [['raider', -150, 5], ['archer', -30, -75], ['archer', -30, 90], ['mage', 40, 0]],
+      bastions: [[3800, 1300], [3800, 1700]],
+      lastStand: { at: .5, message: 'esce il Signore della guerra! Finché vive, i suoi soldati colpiscono più forte.',
+        guards: [['warlord', -170, 0], ['raider', -120, -80], ['raider', -120, 80], ['raider', -60, -125], ['raider', -60, 125], ['archer', -20, -60], ['archer', -20, 60]] },
+      description: 'Il gran finale in tre atti. Atto I: accendi i fari per chiamare gli alleati. Atto II: scorta il trabucco fino alla postazione d’assedio. Atto III: abbatti la cittadella della corona e il suo Signore della guerra. Popolazione: 42, poi 48.',
+      player: [500, 1500],
+      // Fronts keep their order in every act; each act only redirects them (enemyPosts).
+      enemies: [{ team: 'enemy', name: 'Cittadella della corona', x: 4050, y: 1500, post: 7 },
+        { team: 'enemy', type: 'camp', name: 'Campo nord', x: 3000, y: 500, post: 5 },
+        { team: 'enemy', type: 'camp', name: 'Campo sud', x: 3000, y: 2500, post: 6 },
+        { team: 'enemy', type: 'camp', name: 'Scuderie', x: 3750, y: 420, post: 5, hp: 700, troops: 'knight', cap: 4 }],
+      posts: [{ name: 'Faro del nord', role: 'sanctuary', x: 1300, y: 700, gold: 6, noShield: true,
+          bonus: 'Faro: conta per l’atto I se alleato e non conteso. 6 oro ogni 8s, deposito, maghi e basi avanzate.' },
+        { name: 'Faro della valle', role: 'sanctuary', x: 1750, y: 1500, gold: 6, noShield: true,
+          bonus: 'Faro: conta per l’atto I se alleato e non conteso. 6 oro ogni 8s, deposito, maghi e basi avanzate.' },
+        { name: 'Faro del sud', role: 'sanctuary', x: 1300, y: 2300, gold: 6, initialOwner: 'enemy', noShield: true,
+          bonus: 'Faro: conta per l’atto I se alleato e non conteso. 6 oro ogni 8s, deposito, maghi e basi avanzate.' },
+        { name: 'Guado del fiume', role: 'checkpoint', x: 2300, y: 1500, gold: 8, initialOwner: 'enemy', noShield: true,
+          bonus: 'Prima sosta del trabucco: deve essere alleato e non conteso per ripartire. 8 oro ogni 8s, deposito, maghi e basi avanzate.' },
+        { name: 'Torre del mercato', role: 'market', x: 2800, y: 1300, gold: 10, initialOwner: 'enemy',
+          bonus: 'Seconda sosta del trabucco. 10 oro ogni 8s e deposito quando alleata e non contesa. Finché è nemica protegge la cittadella del 15%.' },
+        { name: 'Torre arcana', role: 'arcane', x: 3350, y: 750, gold: 0, initialOwner: 'enemy',
+          bonus: 'Sblocca i maghi finché alleata. Finché è nemica protegge la cittadella del 15%.' },
+        { name: 'Torre di guardia', role: 'guard', x: 3350, y: 2250, gold: 0, initialOwner: 'enemy',
+          damage: 12, range: 220, attackTime: 2,
+          bonus: 'Freccia automatica: 12 danni ogni 2s, portata 220. Finché è nemica protegge la cittadella del 15%.' },
+        { name: 'Forgia', role: 'forge', x: 3550, y: 1500, gold: 0, initialOwner: 'enemy', damageBonus: .2,
+          bonus: '+20% di danni a tutte le unità di chi la controlla, finché non è contesa. Finché è nemica protegge la cittadella del 15%.' }],
+      wood: [[800,800], [800,2200], [1100,1100], [1100,1900], [550,600], [550,2400], [1700,500], [1700,2500],
+        [2000,1000], [2000,2000], [2250,700], [2250,2300], [2600,1000], [2600,2000], [2900,850], [2950,1900],
+        [3350,1200], [3400,1850], [3700,900], [3700,2100], [4200,700], [4200,2300], [1500,1500], [2550,1650],
+        [950,450,1000], [1550,2650,1000]],
+      gold: [[900,1500], [1500,950], [1500,2050], [2050,1500], [2500,1250], [2700,2300], [2700,700], [3200,1100],
+        [3650,2500], [4250,1500], [1250,1500,900], [1950,1850,900], [2900,1650,900]],
+      // Each act overrides part of this configuration; the engine merges them in order.
+      phases: [
+        { kind: 'control', act: 'I', actTitle: 'Atto I · I fari del confine', citadelSealed: true,
+          control: { goal: 90, required: 2, allRate: 1.5, noun: 'fari accesi' },
+          enemyPosts: [7, 0, 2, 1], waveOrder: [1, 2, 3, [1, 2]], minWaveInterval: 40,
+          actIntro: 'accendi almeno due fari non contesi per 90 secondi di rituale; con tre il ritmo è ×1,5.',
+          missionGuide: 'Atto I: tieni almeno due fari alleati e non contesi. Il progresso non si azzera. La cittadella è sigillata: per ora non subisce danni.',
+          startHint: 'Atto I: conquista i fari. Con due fari sicuri il rituale avanza; il Faro del sud è in mano nemica.',
+          reward: { gold: 150, popCap: 6, units: [['soldier', 4], ['archer', 2]],
+            message: 'Gli alleati rispondono ai fari: 4 armigeri, 2 arcieri, +150 oro e popolazione +6.' } },
+        { kind: 'escort', act: 'II', actTitle: 'Atto II · Il trabucco', citadelSealed: true, breather: 40,
+          convoy: { goal: 1, keepOnArrival: true, deliveryLabel: 'POSTAZIONE D’ASSEDIO',
+            vehicle: { kind: 'trebuchet', name: 'trabucco', hp: 900, speed: 42 }, replacementCost: { wood: 150, gold: 90 },
+            route: [{ x: 650, y: 1500, name: 'Partenza' },
+              { x: 2300, y: 1500, name: 'Guado del fiume', post: 3 },
+              { x: 2800, y: 1300, name: 'Torre del mercato', post: 4 },
+              { x: 3150, y: 1500, name: 'Postazione d’assedio' }] },
+          enemyPosts: [7, 3, 4, 3], waveOrder: [3, 1, 2, 3, [1, 2]], minWaveInterval: 36,
+          actIntro: 'scorta il trabucco: si ferma al Guado e alla Torre del mercato, che devono essere tuoi per ripartire.',
+          missionGuide: 'Atto II: comanda il trabucco dai pulsanti sopra la minimappa. I cavalieri lo prendono di mira. Sostituirlo costa 150 legno e 90 oro.',
+          reward: { wood: 100, gold: 100, message: 'Il trabucco è schierato: +100 legno e +100 oro.' } },
+        { kind: 'siege', act: 'III', actTitle: 'Atto III · La corona del confine', breather: 40,
+          counterattacks: true, ramFrom: 1, waveOrder: [3, 1, 2, 0, [1, 2]], minWaveInterval: 32,
+          siegeEngine: { range: 950, damage: 80, interval: 6 },
+          actIntro: 'la cittadella non è più sigillata. Il trabucco la bombarda; abbatti torri e bastioni e affronta il Signore della guerra.',
+          missionGuide: 'Atto III: il trabucco colpisce ogni 6s l’edificio nemico più vicino entro 950. Le torri nemiche proteggono ancora la cittadella. Sotto metà vita esce il Signore della guerra.' }
       ]
     }
   ];
