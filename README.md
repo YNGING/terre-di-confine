@@ -17,6 +17,19 @@ Il selettore iniziale permette di giocare tutti e dieci i livelli. Vincendo uno 
 | Ondate | Prima a 75s, intervallo minimo 38s | Prima a 75s, minimo 38s | Prima a 75s, minimo 42s | Prima a 65s, minimo 36s, tenaglie | Prima a 65s, minimo 34s, cavalleria e tenaglie |
 | Vittoria | Distruggi la fortezza rossa | Distruggi entrambe le fortezze | Distruggi la cittadella | Distruggi la fortezza di ferro | Distruggi la cittadella dell’usurpatore |
 
+Dal livello 6 cambiano gli obiettivi: scorta, controllo, sopravvivenza e il finale in tre atti.
+
+| | Livello 6 · La via dei rifornimenti | Livello 7 · I sigilli della frontiera | Livello 8 · L’ultima resistenza | Livello 9 · La notte dei fuochi | Livello 10 · L’alba del confine |
+| --- | --- | --- | --- | --- | --- |
+| Mappa | 4000 × 2200 | 4200 × 2800 | 3200 × 2200 | 3200 × 2200, notturna | 4500 × 3000 |
+| Popolazione massima, incluse le code | 38 (il carro non occupa posti) | 40 | 40 | 42 | 42, poi 48 dopo l’atto I |
+| Risorse iniziali (legno / oro) | 240 / 120 | 240 / 120 | 350 / 250 | 350 / 250 | 300 / 180 |
+| Boschi / miniere | 18 / 9, di cui 2 ricchi | 22 / 11, di cui 4 ricchi | 10 / 6, di cui 4 ricchi | 10 / 6, di cui 4 ricchi | 26 / 13, di cui 5 ricchi |
+| Punti di controllo | 2 presidi nemici | 3 santuari: 2 neutrali, 1 nemico | Mercato e Mulino neutrali | Mercato e Mulino neutrali, 2 villaggi da 1000 PV | 3 fari, il Guado e 4 torri nemiche |
+| Nemici | Predoni della strada: due campi da 750 PV e Scuderie da 700 PV con cavalieri | Custodi spezzati: tre campi da 850 PV | L’orda del confine dai quattro bordi: nessun edificio nemico, arieti, cavalieri, campione | L’orda del confine su castello e villaggi, arieti e campione | Corona del confine: cittadella da 3000 PV, 2 bastioni, due campi da 850 PV, Scuderie da 700 PV, arieti, cavalieri e Signore della guerra |
+| Ondate | Prima a 80s, minimo 42s, cavalieri contro il carro | Prima a 75s, minimo 38s, tenaglie sui santuari | 12 ondate fisse dopo 90s di preparazione, tregua 35s (60s dopo i grandi assalti) | 10 ondate fisse, stesse regole del livello 8 | Prima a 75s; minimo 40s, poi 36s e 32s secondo l’atto |
+| Vittoria | Consegna tre carri alla fortezza alleata | 180 secondi di rituale con almeno due santuari | Sopravvivi a 12 ondate | Sopravvivi a 10 ondate con castello e almeno un villaggio | Supera i tre atti: fari, trabucco, cittadella |
+
 Costi e statistiche delle unità sono condivisi; la dotazione iniziale è di tre contadini e due armigeri. Il primo livello conserva mappa e bilanciamento originali.
 
 ### La frontiera contesa
